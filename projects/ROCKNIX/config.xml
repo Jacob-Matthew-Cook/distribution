@@ -61,6 +61,9 @@
       <file>rk3326-gameconsole-eeclone</file>
       <file>rk3326-batlexp-g350</file>
     </b>
+    <c mkimage_options="dtb,bootscr,extlinux,uboot" fdt_type="fdtdir" fdt="/">
+      <file>rk3326s-gkd-pixel2</file>
+    </c>
   </RK3326>
   <RK3399 mkimage_options="dtb,extlinux,uboot" fdt="device_trees/rk3399-anbernic-rg552.dtb" fdt_type="fdt" dtb_prefix="rockchip">
     <file>rk3399-anbernic-rg552</file>

@@ -1,0 +1,80 @@
+From: ROCKNIX <https://github.com/ROCKNIX>
+Subject: [PATCH] rockchip: boot_mode: disable ADC-based download-key check
+
+rockchip_dnl_key_pressed() samples SARADC channel 1 and treats a
+near-zero reading (0-30, out of a 0-1023ish range) as "download key
+held at boot", forcing the board straight back into BootROM download
+mode via set_back_to_bootrom_dnl_flag()+do_reset(). This is meant as a
+convenience shortcut for boards that wire a physical recovery/vol
+button through a resistor divider onto that ADC channel.
+
+All RK3326 handheld subdevices (a/b/c) currently share a single
+generic U-Boot devicetree (CONFIG_DEFAULT_DEVICE_TREE =
+"rockchip/rk3326-common-handheld", "devicetree: separate" in the boot
+log) with no per-board differentiation available at this layer, so
+this check can't be scoped to specific hardware via the DT alone.
+
+On boards where SARADC channel 1 is wired to a real control (e.g. an
+analog joystick X-axis, as in the vendor "gamekiddy-joypad" node's
+joy1_x channel), a centered/idle reading sits well above the
+near-zero threshold, so this never misfires. On the GKD Pixel 2,
+which has no analog sticks at all, that same ADC channel is an
+unpopulated/floating pin that reads near 0V - which lands squarely in
+the "key pressed" window on every single boot, sending the board back
+into download mode in an infinite loop before it can ever reach
+extlinux/the kernel.
+
+This is a non-essential developer convenience (the BootROM's own
+maskrom entry via a physical key held at power-on remains completely
+unaffected, since it happens before U-Boot ever runs), so disable it
+unconditionally rather than trying to distinguish boards without a
+per-board DT to key off of.
+
+---
+ arch/arm/mach-rockchip/boot_mode.c | 34 +---------------------------------
+ 1 file changed, 1 insertion(+), 33 deletions(-)
+
+diff --git a/arch/arm/mach-rockchip/boot_mode.c b/arch/arm/mach-rockchip/boot_mode.c
+index 1111111..2222222 100644
+--- a/arch/arm/mach-rockchip/boot_mode.c
++++ b/arch/arm/mach-rockchip/boot_mode.c
+@@ -39,39 +39,7 @@
+ 
+ __weak int rockchip_dnl_key_pressed(void)
+ {
+-#if CONFIG_IS_ENABLED(ADC)
+-	unsigned int val;
+-	struct udevice *dev;
+-	struct uclass *uc;
+-	int ret;
+-
+-	ret = uclass_get(UCLASS_ADC, &uc);
+-	if (ret)
+-		return false;
+-
+-	ret = -ENODEV;
+-	uclass_foreach_dev(dev, uc) {
+-		if (!strncmp(dev->name, "saradc", 6)) {
+-			ret = adc_channel_single_shot(dev->name, 1, &val);
+-			break;
+-		}
+-	}
+-
+-	if (ret == -ENODEV) {
+-		pr_warn("%s: no saradc device found\n", __func__);
+-		return false;
+-	} else if (ret) {
+-		pr_err("%s: adc_channel_single_shot fail!\n", __func__);
+-		return false;
+-	}
+-
+-	if ((val >= KEY_DOWN_MIN_VAL) && (val <= KEY_DOWN_MAX_VAL))
+-		return true;
+-	else
+-		return false;
+-#else
+ 	return false;
+-#endif
+ }
+ 
+ void rockchip_dnl_mode_check(void)

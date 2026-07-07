@@ -385,7 +385,7 @@ static int generic_panel_init_sequence(struct generic_panel *ctx)
     return 0;
 }
 
-static int generic_panel_unprepare(struct drm_panel *panel)
+static int generic_panel_disable(struct drm_panel *panel)
 {
     struct generic_panel *ctx = panel_to_generic_panel(panel);
     struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
@@ -399,10 +399,18 @@ static int generic_panel_unprepare(struct drm_panel *panel)
         dev_err(ctx->dev, "failed to set display off: %d\n", ret);
 
     ret = mipi_dsi_dcs_enter_sleep_mode(dsi);
-    if (ret < 0) {
+    if (ret < 0)
         dev_err(ctx->dev, "failed to enter sleep mode: %d\n", ret);
-        return ret;
-    }
+
+    return 0;
+}
+
+static int generic_panel_unprepare(struct drm_panel *panel)
+{
+    struct generic_panel *ctx = panel_to_generic_panel(panel);
+
+    if (!ctx->prepared)
+        return 0;
 
     if (ctx->enable_gpio) { gpiod_set_value_cansleep(ctx->enable_gpio, 0); }
     gpiod_set_value_cansleep(ctx->reset_gpio, 1);
@@ -420,7 +428,6 @@ static int generic_panel_unprepare(struct drm_panel *panel)
 static int generic_panel_prepare(struct drm_panel *panel)
 {
     struct generic_panel *ctx = panel_to_generic_panel(panel);
-    struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
     int ret;
 
     if (ctx->prepared) {
@@ -448,37 +455,56 @@ static int generic_panel_prepare(struct drm_panel *panel)
 
     msleep(ctx->delays.init);
 
+    ctx->prepared = true;
+
+    return 0;
+
+disable_vdd:
+    regulator_disable(ctx->vdd);
+    return ret;
+}
+
+static int generic_panel_enable(struct drm_panel *panel)
+{
+    struct generic_panel *ctx = panel_to_generic_panel(panel);
+    struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
+    int ret;
+
+    /*
+     * Init sequence (and set-display-on/exit-sleep, if not already
+     * embedded in the panel_description) is sent here, from .enable(),
+     * rather than from .prepare() - matching mainline panel drivers such
+     * as panel-sitronix-st7703.c. .prepare() only powers up
+     * regulators/reset; by the time .enable() runs, the DSI host has
+     * already progressed further through its own pre_enable/mode_set, so
+     * the link is in a more reliably ready state for DCS command
+     * transactions. Sending the full init sequence from .prepare() (as
+     * this driver originally did) could leave commands sent before the
+     * host's clock/PHY setup fully settles.
+     */
     ret = generic_panel_init_sequence(ctx);
     if (ret < 0) {
         dev_err(ctx->dev, "Panel init sequence failed: %d\n", ret);
-        goto disable_iovcc;
+        return ret;
     }
 
     ret = mipi_dsi_dcs_set_display_on(dsi);
     if (ret < 0) {
         dev_err(ctx->dev, "Failed to set display on: %d\n", ret);
-        goto disable_iovcc;
+        return ret;
     }
 
     ret = mipi_dsi_dcs_exit_sleep_mode(dsi);
     if (ret < 0) {
         dev_err(ctx->dev, "Failed to exit sleep mode: %d\n", ret);
-        goto disable_iovcc;
+        return ret;
     }
 
     msleep(ctx->delays.enable);
 
     //msleep(ctx->delays.ready);
 
-    ctx->prepared = true;
-
     return 0;
-
-disable_iovcc:
-    regulator_disable(ctx->iovcc);
-disable_vdd:
-    regulator_disable(ctx->vdd);
-    return ret;
 }
 
 /* drm_display_mode template without clock as it is variable */
@@ -555,8 +581,10 @@ static enum drm_panel_orientation generic_panel_get_orientation(struct drm_panel
 }
 
 static const struct drm_panel_funcs generic_panel_funcs = {
+    .disable    = generic_panel_disable,
     .unprepare  = generic_panel_unprepare,
     .prepare    = generic_panel_prepare,
+    .enable     = generic_panel_enable,
     .get_modes  = generic_panel_get_modes,
     .get_orientation = generic_panel_get_orientation,
 };

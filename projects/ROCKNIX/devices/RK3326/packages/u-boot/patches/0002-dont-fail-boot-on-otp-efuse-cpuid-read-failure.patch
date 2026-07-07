@@ -1,0 +1,43 @@
+From: ROCKNIX <https://github.com/ROCKNIX>
+Subject: [PATCH] rockchip: misc_init_r: don't hard-fail boot on OTP/efuse read failure
+
+rockchip_cpuid_from_efuse() only exists to populate the cosmetic
+cpuid#/serial# env vars and derive an auto-generated MAC address from
+their hash - none of which anything downstream (extlinux, the Linux
+kernel, or ROCKNIX's own boot flow) depends on. misc_init_r() currently
+treats a failure here as fatal and halts the whole boot
+("initcall_run_r(): initcall misc_init_r() failed" / "### ERROR ###
+Please RESET the board ###"), the same way a missing eMMC/env-partition
+already causes a *non-fatal* "Loading Environment from MMC..." warning
+just above it in the boot log.
+
+This matters for boards where the OTP/efuse controller's power/clock
+domain is brought up by the SPL stage rather than U-Boot proper itself:
+if that SPL doesn't happen to enable it (e.g. a vendor-provided SPL
+built for a different U-Boot fork that never reads OTP itself, as
+opposed to ROCKNIX's own SPL which does), the device probe in
+rockchip_cpuid_from_efuse() fails and previously took the whole board
+down with it, even though boot could otherwise proceed normally.
+
+---
+ arch/arm/mach-rockchip/board.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-rockchip/board.c b/arch/arm/mach-rockchip/board.c
+index 1111111..2222222 100644
+--- a/arch/arm/mach-rockchip/board.c
++++ b/arch/arm/mach-rockchip/board.c
+@@ -452,8 +452,11 @@ __weak int misc_init_r(void)
+ 		return ret;
+
+ 	ret = rockchip_cpuid_from_efuse(cpuid_offset, cpuid_length, cpuid);
+-	if (ret)
+-		return ret;
++	if (ret) {
++		printf("misc_init_r: efuse/otp cpuid read failed (%d), skipping cpuid#/serial#/macaddr setup\n",
++		       ret);
++		return 0;
++	}
+
+ 	ret = rockchip_cpuid_set(cpuid, cpuid_length);
+ 	if (ret)

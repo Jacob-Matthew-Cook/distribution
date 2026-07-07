@@ -42,6 +42,13 @@ make_target() {
         u-boot-dtb.bin
   . ${RKHELPER}
   mv uboot.bin uboot.bin.default
+  # Preserve the standalone (rkbin loaderimage-wrapped) u-boot proper blob
+  # from this default build too - the GKD Pixel2 hybrid bootloader package
+  # (u-boot-pixel2) combines this with the vendor's own idbloader/trust
+  # images instead of ROCKNIX's own rkbin DDR blob, since the vendor's is
+  # confirmed to correctly train that board's LPDDR4 memory. Must copy it
+  # here since the uart5 rebuild below overwrites uboot.img in place.
+  cp uboot.img uboot.img.default
 
   ./scripts/config --set-val CONFIG_DEBUG_UART_BASE 0xFF178000
   ./scripts/config --set-str CONFIG_DEVICE_TREE_INCLUDES "rk3326-odroid-go2-emmc.dtsi rk3326-odroid-go2-uart5.dtsi"
@@ -89,6 +96,13 @@ makeinstall_target() {
 
   cp -av uboot.bin.default "${INSTALL}/usr/share/bootloader/b_uboot.bin"
   cp -av uboot.bin.uart5 "${INSTALL}/usr/share/bootloader/b_uboot.bin.uart5"
+
+  # GKD Pixel2 (subdevice c): use ROCKNIX's own fully self-contained
+  # SPL+BL31+trust+u-boot-proper blob (same one used by subdevice b),
+  # dropping the vendor idbloader/trust combination from the earlier
+  # hybrid approach (u-boot-pixel2 package) now that this DDR blob is
+  # confirmed to declare LP4 @ 333MHz support matching this board's RAM.
+  cp -av uboot.bin.default "${INSTALL}/usr/share/bootloader/c_uboot.bin"
 
   find_dir_path config/extlinux || exit 3
   cp -av ${FOUND_PATH} "${INSTALL}/usr/share/bootloader/"
