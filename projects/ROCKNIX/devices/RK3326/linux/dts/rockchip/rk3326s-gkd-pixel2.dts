@@ -125,10 +125,18 @@
 		amux-count = <0>;
 		poll-interval = <10>;
 
-		pwms = <&pwm0 0 200000000 0>;
-		pwm-names = "enable";
-		rumble-boost-weak = <0x0000>;
-		rumble-boost-strong = <0x0000>;
+		/*
+		 * Rumble motor disabled for now: multiple users have reported
+		 * it running constantly/non-stop on this model. A polarity
+		 * flip (PWM_POLARITY_INVERTED) was tried as a fix - reverted
+		 * since it was untested against real hardware and the actual
+		 * cause is still unconfirmed. Leaving pwms/pwm-names/
+		 * rumble-boost-* out entirely means has_rumble stays false in
+		 * rocknix-singleadc-joypad (device_property_present(dev,
+		 * "pwm-names") is how it decides), so the driver never touches
+		 * this pin at all. &pwm0 is also disabled below for the same
+		 * reason, at the hardware/clock level.
+		 */
 
 		button-up {
 			gpios = <&gpio3 RK_PB5 GPIO_ACTIVE_LOW>;
@@ -292,6 +300,19 @@
 	#size-cells = <0>;
 	status = "okay";
 
+	/*
+	 * Force the same DSI lane bitrate the vendor's own kernel computes
+	 * for this exact mode/format/lane-count (480x640@25MHz, RGB888, 2
+	 * lanes): 333 Mbps/lane (confirmed by the vendor's own boot log:
+	 * "final DSI-Link bandwidth: 330 Mbps x 2"), rather than mainline's
+	 * dw-mipi-dsi-rockchip.c auto-calculated 375 Mbps/lane for the same
+	 * inputs (vendor uses a 1/0.9 margin, mainline uses 1/0.8 - see
+	 * 026-px30s-dsi-target-mbps-override.patch). This changes which
+	 * discrete PLL divider gets selected; testing whether this cheap/
+	 * clone DSI panel controller is sensitive to that ~12% difference.
+	 */
+	rockchip,mipi-dsi-target-mbps = <333>;
+
 	ports {
 		mipi_out: port@1 {
 			reg = <1>;
@@ -402,6 +423,19 @@
 };
 
 &dsi_dphy {
+	/*
+	 * PX30S (== RK3326S) has a different, higher-capability DPHY IP
+	 * revision than base PX30 (2.5GHz-capable vs 1GHz-capable), with
+	 * genuinely different analog bias/timing calibration register
+	 * values - see the vendor kernel's phy-rockchip-inno-video-combo-phy.c
+	 * (soc_is_px30s() swaps in a completely different timing table) and
+	 * patch 027-px30s-dsi-dphy-timing-table.patch, which adds this
+	 * compatible string to mainline's phy-rockchip-inno-dsidphy.c mapped
+	 * to its existing (but previously unused) 2.5GHz timing table.
+	 * Falls back to the base compatible for safety if the patch is ever
+	 * reverted.
+	 */
+	compatible = "rockchip,px30s-dsi-dphy", "rockchip,px30-dsi-dphy";
 	status = "okay";
 };
 
@@ -628,8 +662,14 @@
 	status = "okay";
 };
 
+/*
+ * Rumble motor disabled for now (see comment on the joypad node above) -
+ * pwm0 is only used by the motor on this board (pwm1 drives the backlight
+ * and stays enabled below), so disable it fully at the controller/clock
+ * level rather than just leaving it unreferenced.
+ */
 &pwm0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &pwm1 {
@@ -653,17 +693,42 @@
 };
 
 /*
- * Re-tested under ROCKNIX's own SPL (not just the vendor idbloader) to
- * rule out a bootloader-side initialization gap: raw ADC reads are still
- * stuck at 0x0 on both channels regardless of which SPL trained the
- * board, so this isn't an SPL/init-order issue. Worse, tsadc also carries
- * a hardware-level rockchip,hw-tshut-temp auto-reset circuit, entirely
- * separate from Linux's software thermal framework - it forced a silent
- * hard reset even with the software critical trips raised to 300C, since
- * that hardware path is unreachable from software. Leave disabled.
+ * Root cause found: this board's silicon is PX30S, a distinct chip variant
+ * from plain PX30 (confirmed via the vendor kernel's own detection
+ * register, DDR_GRF_CON1 bits[15:14] == 0b11). The vendor kernel special-
+ * cases PX30S in this exact tsadc driver (different ADC init sequence,
+ * a mandatory 4MHz clock rate instead of whatever rate is assigned here,
+ * a ~2.1ms post-enable settle delay, and a linear code<->temp conversion
+ * instead of a lookup table) - raw ADC reads were stuck at 0x0 regardless
+ * of SPL because none of that PX30S-specific handling existed in this
+ * kernel at all, not because of an SPL/init-order issue. See the
+ * 023-px30s-tsadc-support.patch kernel patch, which ports all of this from
+ * the vendor kernel and adds the "rockchip,px30s-tsadc" compatible used
+ * below.
+ *
+ * The previous hard-reset-on-reenable symptom (rockchip,hw-tshut-temp's
+ * hardware-level auto-reset circuit, unreachable from software) was very
+ * likely a downstream symptom of the ADC being fundamentally
+ * uninitialized/misconfigured under the old (wrong-variant) driver logic,
+ * not a separate issue - but since that circuit is a hardware safety net
+ * outside Linux's control, treat re-enabling this as needing real hardware
+ * verification, not just DTS/driver review.
  */
 &tsadc {
-	status = "disabled";
+	compatible = "rockchip,px30s-tsadc";
+	status = "okay";
+};
+
+/*
+ * Same PX30S variant as above - the OTP controller also uses a different
+ * register protocol on PX30S (see 024-px30s-otp-support.patch), which is
+ * why OTP/efuse reads were failing (worked around earlier with
+ * 0002-dont-fail-boot-on-otp-efuse-cpuid-read-failure.patch in u-boot;
+ * that patch can stay as a safety net, but this should fix the actual
+ * reads under Linux).
+ */
+&otp {
+	compatible = "rockchip,px30s-otp";
 };
 
 &u2phy {

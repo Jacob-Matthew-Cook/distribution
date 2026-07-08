@@ -1,0 +1,27 @@
+--- a/drivers/phy/rockchip/phy-rockchip-inno-dsidphy.c
++++ b/drivers/phy/rockchip/phy-rockchip-inno-dsidphy.c
+@@ -762,6 +762,24 @@
+ 		.compatible = "rockchip,px30-dsi-dphy",
+ 		.data = &max_1ghz_video_phy_plat_data,
+ 	}, {
++		/*
++		 * PX30S (== RK3326S, same silicon under a different product
++		 * name - see cpu_is_px30() in the vendor kernel, which treats
++		 * "rockchip,px30s"/"rockchip,rk3326"/"rockchip,rk3326s" as the
++		 * same CPU family) has a different DPHY IP revision than base
++		 * PX30 - 2.5GHz-capable rather than 1GHz-capable, with
++		 * genuinely different analog bias/timing calibration register
++		 * values (see the vendor kernel's
++		 * phy-rockchip-inno-video-combo-phy.c: soc_is_px30s() swaps in
++		 * a completely different inno_mipi_dphy_timing_table for this
++		 * reason). Using the plain "rockchip,px30-dsi-dphy" compatible
++		 * (the max_1ghz table) on PX30S hardware skips the PLL post-
++		 * divider enable, the clock-lane VOD range register, and the
++		 * high-order bits of several timing counters entirely.
++		 */
++		.compatible = "rockchip,px30s-dsi-dphy",
++		.data = &max_2_5ghz_video_phy_plat_data,
++	}, {
+ 		.compatible = "rockchip,rk3128-dsi-dphy",
+ 		.data = &max_1ghz_video_phy_plat_data,
+ 	}, {

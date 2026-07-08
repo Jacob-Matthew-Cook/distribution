@@ -1,0 +1,207 @@
+--- a/drivers/nvmem/rockchip-otp.c
++++ b/drivers/nvmem/rockchip-otp.c
+@@ -32,6 +32,28 @@
+ #define OTPC_SBPI_CMD0_OFFSET		0x1000
+ #define OTPC_SBPI_CMD1_OFFSET		0x1004
+ 
++/* PX30S/RK3308BS OTP controller has a different register layout/protocol
++ * than plain PX30 - a standby/active mode state machine rather than direct
++ * SBPI/USER register poking. */
++#define OTPC_MODE_CTRL			0x2000
++#define OTPC_IRQ_ST			0x2008
++#define OTPC_ACCESS_ADDR		0x200c
++#define OTPC_RD_DATA			0x2010
++#define OTPC_REPR_RD_TRANS_NUM		0x2020
++
++#define OTPC_DEEP_STANDBY		0x0
++#define OTPC_STANDBY			0x1
++#define OTPC_ACTIVE			0x2
++#define OTPC_READ_ACCESS		0x3
++#define OTPC_TRANS_NUM			0x1
++#define OTPC_RDM_IRQ_ST			BIT(0)
++#define OTPC_STB2ACT_IRQ_ST		BIT(7)
++#define OTPC_DP2STB_IRQ_ST		BIT(8)
++#define OTPC_ACT2STB_IRQ_ST		BIT(9)
++#define OTPC_STB2DP_IRQ_ST		BIT(10)
++#define RK3308BS_NBYTES			4
++#define RK3308BS_NO_SECURE_OFFSET	224
++
+ /* OTP Register bits and masks */
+ #define OTPC_USER_ADDR_MASK		GENMASK(31, 16)
+ #define OTPC_USE_USER			BIT(0)
+@@ -184,6 +206,142 @@
+ 	return ret;
+ }
+ 
++/*
++ * PX30S is a distinct chip variant from plain PX30 (detected via a
++ * DDR_GRF_CON1 register bit, see rockchip,px30s-otp in the devicetree
++ * binding). Its OTP controller uses a different register layout/protocol
++ * than plain PX30 - a standby/active mode state machine (this function,
++ * ported from the vendor's rk3308bs_otp_read(), which PX30S shares) rather
++ * than plain PX30's direct SBPI/USER register poking (px30_otp_read()
++ * above). Using the wrong protocol for this chip results in reads that
++ * silently fail/return stale data.
++ */
++static int rk3308bs_otp_active(struct rockchip_otp *otp)
++{
++	int ret = 0;
++	u32 mode;
++
++	mode = readl(otp->base + OTPC_MODE_CTRL);
++
++	switch (mode) {
++	case OTPC_DEEP_STANDBY:
++		writel(OTPC_STANDBY, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_wait_status(otp, OTPC_IRQ_ST,
++					       OTPC_DP2STB_IRQ_ST);
++		if (ret < 0) {
++			dev_err(otp->dev, "timeout during wait dp2stb\n");
++			return ret;
++		}
++		/* fall through */
++	case OTPC_STANDBY:
++		writel(OTPC_ACTIVE, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_wait_status(otp, OTPC_IRQ_ST,
++					       OTPC_STB2ACT_IRQ_ST);
++		if (ret < 0) {
++			dev_err(otp->dev, "timeout during wait stb2act\n");
++			return ret;
++		}
++		break;
++	default:
++		break;
++	}
++
++	return ret;
++}
++
++static int rk3308bs_otp_standby(struct rockchip_otp *otp)
++{
++	int ret = 0;
++	u32 mode;
++
++	mode = readl(otp->base + OTPC_MODE_CTRL);
++
++	switch (mode) {
++	case OTPC_ACTIVE:
++		writel(OTPC_STANDBY, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_wait_status(otp, OTPC_IRQ_ST,
++					       OTPC_ACT2STB_IRQ_ST);
++		if (ret < 0) {
++			dev_err(otp->dev, "timeout during wait act2stb\n");
++			return ret;
++		}
++		/* fall through */
++	case OTPC_STANDBY:
++		writel(OTPC_DEEP_STANDBY, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_wait_status(otp, OTPC_IRQ_ST,
++					       OTPC_STB2DP_IRQ_ST);
++		if (ret < 0) {
++			dev_err(otp->dev, "timeout during wait stb2dp\n");
++			return ret;
++		}
++		break;
++	default:
++		break;
++	}
++
++	return ret;
++}
++
++static int rk3308bs_otp_read(void *context, unsigned int offset,
++			     void *val, size_t bytes)
++{
++	struct rockchip_otp *otp = context;
++	unsigned int addr_start, addr_end, addr_offset, addr_len;
++	u32 out_value;
++	u8 *buf;
++	int ret, i = 0;
++
++	if (offset >= otp->data->size)
++		return -ENOMEM;
++	if (offset + bytes > otp->data->size)
++		bytes = otp->data->size - offset;
++
++	ret = rockchip_otp_reset(otp);
++	if (ret) {
++		dev_err(otp->dev, "failed to reset otp phy\n");
++		return ret;
++	}
++
++	ret = rk3308bs_otp_active(otp);
++	if (ret)
++		return ret;
++
++	addr_start = round_down(offset, RK3308BS_NBYTES) / RK3308BS_NBYTES;
++	addr_end = round_up(offset + bytes, RK3308BS_NBYTES) / RK3308BS_NBYTES;
++	addr_offset = offset % RK3308BS_NBYTES;
++	addr_len = addr_end - addr_start;
++	addr_start += RK3308BS_NO_SECURE_OFFSET;
++
++	buf = kzalloc(array_size(addr_len, RK3308BS_NBYTES), GFP_KERNEL);
++	if (!buf) {
++		ret = -ENOMEM;
++		goto read_end;
++	}
++
++	while (addr_len--) {
++		writel(OTPC_TRANS_NUM, otp->base + OTPC_REPR_RD_TRANS_NUM);
++		writel(addr_start++, otp->base + OTPC_ACCESS_ADDR);
++		writel(OTPC_READ_ACCESS, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_wait_status(otp, OTPC_IRQ_ST,
++					       OTPC_RDM_IRQ_ST);
++		if (ret < 0) {
++			dev_err(otp->dev, "timeout during wait rd\n");
++			goto read_end;
++		}
++		out_value = readl(otp->base + OTPC_RD_DATA);
++
++		memcpy(&buf[i], &out_value, RK3308BS_NBYTES);
++		i += RK3308BS_NBYTES;
++	}
++	memcpy(val, buf + addr_offset, bytes);
++
++read_end:
++	kfree(buf);
++	rk3308bs_otp_standby(otp);
++
++	return ret;
++}
++
+ static int rk3588_otp_read(void *context, unsigned int offset,
+ 			   void *val, size_t bytes)
+ {
+@@ -274,6 +432,13 @@
+ 	.reg_read = px30_otp_read,
+ };
+ 
++static const struct rockchip_data rk3308bs_data = {
++	.size = 0x80,
++	.clks = px30_otp_clocks,
++	.num_clks = ARRAY_SIZE(px30_otp_clocks),
++	.reg_read = rk3308bs_otp_read,
++};
++
+ static const struct rockchip_data rk3576_data = {
+ 	.size = 0x100,
+ 	.read_offset = 0x700,
+@@ -300,10 +465,18 @@
+ 		.data = &px30_data,
+ 	},
+ 	{
++		.compatible = "rockchip,px30s-otp",
++		.data = &rk3308bs_data,
++	},
++	{
+ 		.compatible = "rockchip,rk3308-otp",
+ 		.data = &px30_data,
+ 	},
+ 	{
++		.compatible = "rockchip,rk3308bs-otp",
++		.data = &rk3308bs_data,
++	},
++	{
+ 		.compatible = "rockchip,rk3576-otp",
+ 		.data = &rk3576_data,
+ 	},
