@@ -1,66 +1,32 @@
 --- a/drivers/pmdomain/rockchip/pm-domains.c
 +++ b/drivers/pmdomain/rockchip/pm-domains.c
-@@ -7,6 +7,7 @@
+@@ -35,6 +35,7 @@
+ #include <dt-bindings/power/rk3568-power.h>
+ #include <dt-bindings/power/rockchip,rk3576-power.h>
+ #include <dt-bindings/power/rk3588-power.h>
++#include <linux/rockchip/cpu.h>
  
- #include <linux/io.h>
- #include <linux/iopoll.h>
-+#include <linux/sizes.h>
- #include <linux/err.h>
- #include <linux/mutex.h>
- #include <linux/platform_device.h>
-@@ -569,11 +570,58 @@
- 	}
- }
- 
-+/*
-+ * PX30S is a distinct chip variant from plain PX30, detected via a
-+ * DDR_GRF_CON1 register bit (matching the vendor kernel's
-+ * rockchip-cpuinfo.c px30_init()/soc_is_px30s()). On PX30S, powering off
-+ * the GPU power domain (named "pd_gpu" in the vendor kernel's own table,
-+ * "gpu" here since that's the string this mainline driver's own
-+ * DOMAIN_PX30("gpu", ...) table entry uses for pd->genpd.name) through the
-+ * normal genpd path is erratic and
-+ * can corrupt the GPU clock's prepare/enable refcount (surfacing as e.g.
-+ * "Enabling unprepared clk_gpu" warnings and -108/-ESHUTDOWN errors from
-+ * clk_core_enable() on a later resume) - the vendor kernel works around
-+ * this by simply never powering the domain off. This is not something a
-+ * devicetree property can express (there is no distinct "px30s" power
-+ * domain compatible string, unlike the otp/tsadc PX30S workarounds), so it
-+ * needs this direct register-based detection.
-+ */
-+#define PX30_DDR_GRF_PHYS	0xFF630000
-+#define PX30_DDR_GRF_CON1	0x04
-+
-+static bool rockchip_soc_is_px30s(void)
-+{
-+	static int px30s = -1;
-+	void __iomem *base;
-+
-+	if (px30s >= 0)
-+		return px30s;
-+
-+	px30s = 0;
-+	if (of_machine_is_compatible("rockchip,px30") ||
-+	    of_machine_is_compatible("rockchip,rk3326")) {
-+		base = ioremap(PX30_DDR_GRF_PHYS, SZ_4K);
-+		if (base) {
-+			u32 val = readl_relaxed(base + PX30_DDR_GRF_CON1);
-+
-+			if (((val >> 14) & 0x03) == 0x03)
-+				px30s = 1;
-+			iounmap(base);
-+		}
-+	}
-+
-+	return px30s;
-+}
-+
- static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
- {
+ struct rockchip_domain_info {
+ 	const char *name;
+@@ -574,6 +575,24 @@
  	struct rockchip_pmu *pmu = pd->pmu;
  	int ret;
  
-+	if (!power_on && rockchip_soc_is_px30s() &&
++	/*
++	 * Ported from the vendor kernel's 41f9bdf3cf40 ("soc: rockchip:
++	 * power-domain: keep pd_gpu always on for px30s"), corrected per the
++	 * follow-up fix 480163a87a56 ("soc: rockchip: power-domain: correct
++	 * name of pd_gpu for px30s") - the original patch compared against
++	 * "pd_gpu", but the genpd's actual name (both there and in this
++	 * mainline driver's own DOMAIN_PX30("gpu", ...) table entry) is just
++	 * "gpu", so the original check never matched anything. Powering off
++	 * the GPU domain through the normal genpd path on PX30S is erratic
++	 * and can corrupt the GPU clock's prepare/enable refcount (surfacing
++	 * as e.g. "Enabling unprepared clk_gpu" warnings and -108/-ESHUTDOWN
++	 * errors from clk_core_enable() on a later resume) - the vendor
++	 * kernel works around this by simply never powering the domain off.
++	 */
++	if (!power_on && soc_is_px30s() &&
 +	    pd->genpd.name && !strcmp(pd->genpd.name, "gpu"))
 +		return 0;
 +

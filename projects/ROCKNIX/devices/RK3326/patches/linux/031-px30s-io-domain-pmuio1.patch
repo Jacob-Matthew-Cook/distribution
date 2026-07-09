@@ -1,0 +1,24 @@
+--- a/drivers/soc/rockchip/io-domain.c
++++ b/drivers/soc/rockchip/io-domain.c
+@@ -14,6 +14,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
+ #include <linux/regulator/consumer.h>
++#include <linux/rockchip/cpu.h>
+ 
+ #define MAX_SUPPLIES		16
+ 
+@@ -656,6 +657,13 @@
+ 		if (!supply_name)
+ 			continue;
+ 
++		/*
++		 * Ported from the vendor kernel's 779017748410 ("power/avs:
++		 * rockchip-io-domain: px30s not support pmuio1 1v8 mode").
++		 */
++		if (soc_is_px30s() && !strcmp(supply_name, "pmuio1"))
++			continue;
++
+ 		reg = devm_regulator_get_optional(iod->dev, supply_name);
+ 		if (IS_ERR(reg)) {
+ 			ret = PTR_ERR(reg);
