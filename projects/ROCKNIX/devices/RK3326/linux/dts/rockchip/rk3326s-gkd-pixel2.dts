@@ -111,6 +111,15 @@
 		};
 	};
 
+	/*
+	 * TODO (input updates): this whole node's button mapping - and the
+	 * es_input.cfg / retroarch-joypads/gamepads/gkd_pixel2_joypad.cfg
+	 * entries derived from it - needs real-hardware validation. The A/B
+	 * swap below is the one confirmed issue so far; the rest (D-pad,
+	 * X/Y, L1/R1/L2/R2, Select/Start, Menu/hotkey) were cross-validated
+	 * against the vendor-extracted devicetree but never confirmed on an
+	 * actual device. Re-verify all of it once hardware testing resumes.
+	 */
 	builtin_gamepad: gkd-pixel2-joypad {
 		compatible = "rocknix-singleadc-joypad";
 		pinctrl-names = "default";
@@ -173,6 +182,16 @@
 			linux,code = <BTN_DPAD_RIGHT>;
 		};
 
+		/*
+		 * TODO: A/B are swapped - confirmed on real hardware. The
+		 * physical button labeled A produces BTN_SOUTH and the one
+		 * labeled B produces BTN_EAST, the opposite of what's wired
+		 * below. Needs the linux,code (or gpios) values swapped
+		 * between these two nodes, and the downstream input configs
+		 * (es_input.cfg, retroarch-joypads/gamepads/gkd_pixel2_joypad.cfg)
+		 * re-checked against real hardware once fixed - see the
+		 * broader input-updates TODO on the joypad node above this.
+		 */
 		button-a {
 			gpios = <&gpio3 RK_PD1 GPIO_ACTIVE_LOW>;
 			label = "EAST";
@@ -365,6 +384,22 @@
 	i2c-scl-rising-time-ns = <280>;
 	status = "okay";
 
+	/*
+	 * KNOWN ONGOING ISSUE: device enters sleep correctly but does not
+	 * wake from it at all (confirmed on real hardware). A patch to
+	 * drivers/input/misc/rk805-pwrkey.c adding dev_pm_set_wake_irq() for
+	 * the power-button fall_irq (the driver called device_init_wakeup()
+	 * but never actually armed an IRQ as a wake source) was tried and
+	 * tested on real hardware - no change in behavior, so that was not
+	 * the (or not the only) root cause. Reverted rather than kept as a
+	 * no-op patch. Still unexplained: possibly the missing SoC<->PMIC
+	 * SLP-pin pinmux handshake the vendor kernel wires here (see the
+	 * unused soc_slppin_gpio/rst/slp pinctrl entries below, which have
+	 * no mainline binding to attach to - see rk8xx_suspend()/
+	 * rk8xx_resume() in drivers/mfd/rk8xx-core.c, which only handles the
+	 * PMIC-internal SLPPIN register, not the SoC-side GPIO pinmux), or
+	 * something else entirely. Needs further investigation.
+	 */
 	rk817: pmic@20 {
 		compatible = "rockchip,rk817";
 		reg = <0x20>;
