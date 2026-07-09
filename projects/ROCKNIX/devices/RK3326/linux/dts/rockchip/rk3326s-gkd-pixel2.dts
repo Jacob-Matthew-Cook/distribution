@@ -126,16 +126,27 @@
 		poll-interval = <10>;
 
 		/*
-		 * Rumble motor disabled for now: multiple users have reported
-		 * it running constantly/non-stop on this model. A polarity
-		 * flip (PWM_POLARITY_INVERTED) was tried as a fix - reverted
-		 * since it was untested against real hardware and the actual
-		 * cause is still unconfirmed. Leaving pwms/pwm-names/
-		 * rumble-boost-* out entirely means has_rumble stays false in
-		 * rocknix-singleadc-joypad (device_property_present(dev,
-		 * "pwm-names") is how it decides), so the driver never touches
-		 * this pin at all. &pwm0 is also disabled below for the same
-		 * reason, at the hardware/clock level.
+		 * Rumble motor disabled again: re-enabling it (pwms/pwm-names/
+		 * rumble-boost-*, plus &pwm0 status=okay below) reproduced
+		 * the same "runs constantly" report as before. Confirmed on
+		 * real hardware this time: full strength, starts only once
+		 * Linux boots (not at power-on), and persists across both
+		 * PWM_POLARITY_NORMAL and PWM_POLARITY_INVERTED - so it isn't
+		 * a simple active-high/active-low mismatch (that only affects
+		 * the waveform while actively toggling, not the idle/disabled
+		 * electrical state). The C driver logic itself is confirmed
+		 * correct: pwm_init_state() (include/linux/pwm.h) unconditionally
+		 * zeroes duty_cycle before joypad_rumble_setup() only sets
+		 * enabled=false on top of that, so period=200ms/duty=0/disabled
+		 * is genuinely what's being applied in software. The mismatch
+		 * is happening below that - either a Rockchip PWM chip-driver
+		 * quirk on disable, or something else entirely - not yet
+		 * diagnosed. Leaving pwms/pwm-names/rumble-boost-* out entirely
+		 * means has_rumble stays false in rocknix-singleadc-joypad
+		 * (device_property_present(dev, "pwm-names") is how it decides),
+		 * so the driver never touches this pin at all. &pwm0 is also
+		 * disabled below for the same reason, at the hardware/clock
+		 * level.
 		 */
 
 		button-up {
@@ -267,6 +278,8 @@
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_mipi_lcd0";
 		gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_LOW>;
+                pinctrl-0 = <&vcc_mipi_lcd_n>;
+                pinctrl-names = "default";
 		regulator-boot-on;
 
 		regulator-state-mem {
@@ -300,126 +313,23 @@
 	#size-cells = <0>;
 	status = "okay";
 
-	/*
-	 * Force the same DSI lane bitrate the vendor's own KERNEL computes
-	 * for this exact mode/format/lane-count (480x640@25MHz, RGB888, 2
-	 * lanes): 336 Mbps/lane. Confirmed directly from the vendor kernel's
-	 * own dmesg (reference_stock_dmesg.txt): "dw-mipi-dsi-rockchip
-	 * ff450000.dsi: final DSI-Link bandwidth: 336 x 2 Mbps" - NOT the
-	 * 330 Mbps figure printed by U-Boot's own separate, earlier-stage
-	 * splash/init code (reference_stock_boot_uart.txt), which uses a
-	 * different, simpler calculation and isn't what the kernel driver
-	 * we're actually trying to match configures. Confirmed via live
-	 * register readback that stock's kernel PHY registers are prediv=1,
-	 * fbdiv=28 - and 336 is the only target that reproduces that exact
-	 * (prediv, fbdiv) pair with zero PLL quantization error, whereas the
-	 * previous 333 figure quantized down to a slightly different actual
-	 * rate (330 MHz via prediv=2/fbdiv=55), causing dsi->lane_mbps (used
-	 * for HLINE_TIME and other host-side byte-clock-cycle timing
-	 * registers) to disagree with the PHY's true achieved rate.
-	 */
-	rockchip,mipi-dsi-target-mbps = <336>;
-
-	ports {
-		mipi_out: port@1 {
-			reg = <1>;
-
-			mipi_out_panel: endpoint {
-				remote-endpoint = <&mipi_in_panel>;
-			};
-		};
-	};
-
-	/*
-	 * Mainline's panel-sitronix-st7703 driver only recognizes
-	 * board-specific compatible strings (each mapped to a compiled-in
-	 * init-sequence/timing table) - there is no entry for this board, so
-	 * that driver never binds and the DSI component master silently
-	 * waits forever (no /dev/dri, no error). Instead use ROCKNIX's own
-	 * "rocknix,generic-dsi" driver, which parses a panel description
-	 * (globals/mode/init-sequence) straight out of the devicetree - no
-	 * kernel patch required. The G/M/I lines below are a byte-for-byte
-	 * translation of the vendor's original panel-init-sequence
-	 * (dcs = command byte, data = parameter bytes, wait = post-command
-	 * delay in ms - note this driver parses "wait" as hex, so e.g. 120ms
-	 * is written "78"). The vendor's separate panel-exit-sequence
-	 * (display-off + enter-sleep-mode) is intentionally NOT included here:
-	 * generic_panel_unprepare() in panel-generic-dsi.c already sends both
-	 * of those DCS commands itself on every disable/power-down. Appending
-	 * them to the init sequence too was an earlier translation mistake -
-	 * it made the panel immediately sleep right after being initialized,
-	 * which produced a lit-backlight-but-pure-black-screen symptom that
-	 * was very hard to distinguish from a GPU rendering bug.
-	 */
 	internal_display: panel@0 {
-		compatible = "rocknix,generic-dsi";
 		reg = <0>;
+		compatible = "gkd,pixel2-panel";
 		backlight = <&backlight>;
-		vdd-supply = <&vcc_mipi_lcd0>;
-		iovcc-supply = <&vcc_mipi_lcd0>;
+		VCC-supply = <&vcc_mipi_lcd0>;
+		IOVCC-supply = <&vcc_mipi_lcd0>;
 		enable-gpios = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
-		reset-gpios = <&gpio0 RK_PB4 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&dsi0_lcd_gpio>;
-		rotation = <90>;
-		panel_description =
-			/*
-			 * flags=2563 (0xa03) = MIPI_DSI_MODE_VIDEO |
-			 * MIPI_DSI_MODE_VIDEO_BURST | MIPI_DSI_MODE_NO_EOT_PACKET |
-			 * MIPI_DSI_MODE_LPM. This is the exact same flag
-			 * combination used by every ST7703 panel profile in
-			 * mainline's panel-sitronix-st7703.c (rg353v2,
-			 * rgb30panel, rgb10max3, etc.) - confirmed by reading
-			 * that driver directly. An earlier theory that bit 9
-			 * needed to be cleared (because a vendor 4.4 BSP
-			 * kernel's bit 9 means something different) was wrong;
-			 * this value matches known-working mainline panels.
-			 */
-			"G delays=0,2,1,20,120,50 size=0,68,121 format=rgb888 lanes=2 flags=2563",
-			"M clock=25000 horizontal=480,40,10,40 vertical=640,40,10,40 default=1",
-			"I dcs=ff data=7701000013 wait=0",
-			"I dcs=ef data=08 wait=0",
-			"I dcs=ff data=7701000010 wait=0",
-			"I dcs=c0 data=4f00 wait=0",
-			"I dcs=c1 data=100c wait=0",
-			"I dcs=c2 data=0114 wait=0",
-			"I dcs=cc data=10 wait=0",
-			"I dcs=b0 data=000b130d10070208071f04110f282f1f wait=0",
-			"I dcs=b1 data=000c130c10050208081e05131127301f wait=0",
-			"I dcs=ff data=7701000011 wait=0",
-			"I dcs=b0 data=4d wait=0",
-			"I dcs=b1 data=4d wait=0",
-			"I dcs=b2 data=87 wait=0",
-			"I dcs=b3 data=80 wait=0",
-			"I dcs=b5 data=45 wait=0",
-			"I dcs=b7 data=85 wait=0",
-			"I dcs=b8 data=20 wait=0",
-			"I dcs=c0 data=09 wait=0",
-			"I dcs=c1 data=78 wait=0",
-			"I dcs=c2 data=78 wait=0",
-			"I dcs=d0 data=88 wait=64",
-			"I dcs=e0 data=000002 wait=0",
-			"I dcs=e1 data=04b006b005b007b0004444 wait=0",
-			"I dcs=e2 data=2020444496a0000096a00000 wait=0",
-			"I dcs=e3 data=00002222 wait=0",
-			"I dcs=e4 data=4444 wait=0",
-			"I dcs=e5 data=0c90b0a00e92b0a0088cb0a00a8eb0a0 wait=0",
-			"I dcs=e6 data=00002222 wait=0",
-			"I dcs=e7 data=4444 wait=0",
-			"I dcs=e8 data=0d91b0a00f93b0a0098db0a00b8fb0a0 wait=0",
-			"I dcs=e9 data=3600 wait=0",
-			"I dcs=eb data=0000e4e4448840 wait=0",
-			"I dcs=ed data=c1a2bf0f6745ffffffff5476f0fb2a1c wait=0",
-			"I dcs=ef data=100d04083f1f wait=0",
-			"I dcs=ff data=7701000013 wait=0",
-			"I dcs=e8 data=000e wait=0",
-			"I dcs=ff data=7701000000 wait=0",
-			"I dcs=11 data= wait=78",
-			"I dcs=ff data=7701000013 wait=0",
-			"I dcs=e8 data=000c wait=a",
-			"I dcs=e8 data=0000 wait=0",
-			"I dcs=ff data=7701000000 wait=0",
-			"I dcs=29 data= wait=32";
+                pinctrl-0 = <&dsi0_lcd_gpio>;
+		/*
+		 * 90 produced an upside-down image (180 degrees off from
+		 * correct) once the panel actually started displaying
+		 * anything - this panel is mounted 270 degrees relative to
+		 * its native portrait orientation in this chassis, not 90.
+		 */
+		rotation = <270>;
 
 		port {
 			mipi_in_panel: endpoint {
@@ -427,21 +337,19 @@
 			};
 		};
 	};
+
+	ports {
+		mipi_out: port@1 {
+			rockchip,mipi-dsi-target-mbps = <333>;
+			reg = <1>;
+			mipi_out_panel: endpoint {
+				remote-endpoint = <&mipi_in_panel>;
+			};
+		};
+	};
 };
 
 &dsi_dphy {
-	/*
-	 * PX30S (== RK3326S) has a different, higher-capability DPHY IP
-	 * revision than base PX30 (2.5GHz-capable vs 1GHz-capable), with
-	 * genuinely different analog bias/timing calibration register
-	 * values - see the vendor kernel's phy-rockchip-inno-video-combo-phy.c
-	 * (soc_is_px30s() swaps in a completely different timing table) and
-	 * patch 027-px30s-dsi-dphy-timing-table.patch, which adds this
-	 * compatible string to mainline's phy-rockchip-inno-dsidphy.c mapped
-	 * to its existing (but previously unused) 2.5GHz timing table.
-	 * Falls back to the base compatible for safety if the patch is ever
-	 * reverted.
-	 */
 	compatible = "rockchip,px30s-dsi-dphy", "rockchip,px30-dsi-dphy";
 	status = "okay";
 };
@@ -706,36 +614,21 @@
  * cases PX30S in this exact tsadc driver (different ADC init sequence,
  * a mandatory 4MHz clock rate instead of whatever rate is assigned here,
  * a ~2.1ms post-enable settle delay, and a linear code<->temp conversion
- * instead of a lookup table) - raw ADC reads were stuck at 0x0 regardless
- * of SPL because none of that PX30S-specific handling existed in this
- * kernel at all, not because of an SPL/init-order issue. See the
- * 023-px30s-tsadc-support.patch kernel patch, which ports all of this from
- * the vendor kernel and adds the "rockchip,px30s-tsadc" compatible used
- * below.
+ * instead of a lookup table) - see 023-px30s-tsadc-support.patch, which
+ * ports all of this from the vendor kernel and adds the
+ * "rockchip,px30s-tsadc" compatible used below.
  *
- * The previous hard-reset-on-reenable symptom (rockchip,hw-tshut-temp's
- * hardware-level auto-reset circuit, unreachable from software) was very
- * likely a downstream symptom of the ADC being fundamentally
- * uninitialized/misconfigured under the old (wrong-variant) driver logic,
- * not a separate issue - but since that circuit is a hardware safety net
- * outside Linux's control, treat re-enabling this as needing real hardware
- * verification, not just DTS/driver review.
+ * The collaborator's working dts leaves this disabled entirely, citing
+ * raw ADC reads still stuck at 0x0 under both SPLs and a hardware-level
+ * rockchip,hw-tshut-temp auto-reset circuit (unreachable from software)
+ * that forced a silent hard reset even with critical trips raised to
+ * 300C. Re-enabled here per explicit request - if a silent reset recurs,
+ * that hw-tshut circuit is the first place to look, since it sits outside
+ * Linux's control entirely.
  */
 &tsadc {
 	compatible = "rockchip,px30s-tsadc";
 	status = "okay";
-};
-
-/*
- * Same PX30S variant as above - the OTP controller also uses a different
- * register protocol on PX30S (see 024-px30s-otp-support.patch), which is
- * why OTP/efuse reads were failing (worked around earlier with
- * 0002-dont-fail-boot-on-otp-efuse-cpuid-read-failure.patch in u-boot;
- * that patch can stay as a safety net, but this should fix the actual
- * reads under Linux).
- */
-&otp {
-	compatible = "rockchip,px30s-otp";
 };
 
 &u2phy {
@@ -811,6 +704,13 @@
 				<0 RK_PB4 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
+
+	vcc-mipi-lcd {
+		vcc_mipi_lcd_n: vcc-mipi-lcd-n {
+			rockchip,pins = <0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
+		 };
+	};
+
 
 	pmic {
 		pmic_int: pmic-int {
