@@ -119,7 +119,17 @@ else
   # Sway automatically moves workspace 1 to DP-1 when it appears
   # and back to DSI-1 when it disconnects.
   echo "workspace 1 output DP-1 ${con}" >> $SWAY_HOME/config
-  echo 'for_window [app_id="emulationstation"] move output DP-1' >> $SWAY_HOME/config
+  # Unlike the "workspace ... output" preference list above, "move output"
+  # requires the named output to exist right now - if it doesn't, sway logs
+  # a hard error and the emulationstation window is left unplaced/invisible
+  # (only the background layer ends up on screen). Only emit this on
+  # hardware that actually has a DP/HDMI-capable connector at all, even if
+  # currently disconnected. Boards with DSI-only display hardware (e.g.
+  # GKD Pixel2, which has no DP/HDMI output block on its SoC) have no such
+  # connector, so this command would always fail on them.
+  if ls /sys/class/drm/card${card_no}-DP-* /sys/class/drm/card${card_no}-HDMI-A-* 2>/dev/null | grep -q .; then
+    echo 'for_window [app_id="emulationstation"] move output DP-1' >> $SWAY_HOME/config
+  fi
 fi
 
 # Start the external display monitor on any device that has DP or HDMI
