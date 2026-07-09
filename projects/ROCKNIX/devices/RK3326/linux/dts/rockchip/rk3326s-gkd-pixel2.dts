@@ -301,17 +301,24 @@
 	status = "okay";
 
 	/*
-	 * Force the same DSI lane bitrate the vendor's own kernel computes
+	 * Force the same DSI lane bitrate the vendor's own KERNEL computes
 	 * for this exact mode/format/lane-count (480x640@25MHz, RGB888, 2
-	 * lanes): 333 Mbps/lane (confirmed by the vendor's own boot log:
-	 * "final DSI-Link bandwidth: 330 Mbps x 2"), rather than mainline's
-	 * dw-mipi-dsi-rockchip.c auto-calculated 375 Mbps/lane for the same
-	 * inputs (vendor uses a 1/0.9 margin, mainline uses 1/0.8 - see
-	 * 026-px30s-dsi-target-mbps-override.patch). This changes which
-	 * discrete PLL divider gets selected; testing whether this cheap/
-	 * clone DSI panel controller is sensitive to that ~12% difference.
+	 * lanes): 336 Mbps/lane. Confirmed directly from the vendor kernel's
+	 * own dmesg (reference_stock_dmesg.txt): "dw-mipi-dsi-rockchip
+	 * ff450000.dsi: final DSI-Link bandwidth: 336 x 2 Mbps" - NOT the
+	 * 330 Mbps figure printed by U-Boot's own separate, earlier-stage
+	 * splash/init code (reference_stock_boot_uart.txt), which uses a
+	 * different, simpler calculation and isn't what the kernel driver
+	 * we're actually trying to match configures. Confirmed via live
+	 * register readback that stock's kernel PHY registers are prediv=1,
+	 * fbdiv=28 - and 336 is the only target that reproduces that exact
+	 * (prediv, fbdiv) pair with zero PLL quantization error, whereas the
+	 * previous 333 figure quantized down to a slightly different actual
+	 * rate (330 MHz via prediv=2/fbdiv=55), causing dsi->lane_mbps (used
+	 * for HLINE_TIME and other host-side byte-clock-cycle timing
+	 * registers) to disagree with the PHY's true achieved rate.
 	 */
-	rockchip,mipi-dsi-target-mbps = <333>;
+	rockchip,mipi-dsi-target-mbps = <336>;
 
 	ports {
 		mipi_out: port@1 {
