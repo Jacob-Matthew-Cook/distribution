@@ -115,10 +115,10 @@
 	 * TODO (input updates): this whole node's button mapping - and the
 	 * es_input.cfg / retroarch-joypads/gamepads/gkd_pixel2_joypad.cfg
 	 * entries derived from it - needs real-hardware validation. The A/B
-	 * swap below is the one confirmed issue so far; the rest (D-pad,
-	 * X/Y, L1/R1/L2/R2, Select/Start, Menu/hotkey) were cross-validated
-	 * against the vendor-extracted devicetree but never confirmed on an
-	 * actual device. Re-verify all of it once hardware testing resumes.
+	 * swap has been fixed below; the rest (D-pad, X/Y, L1/R1/L2/R2,
+	 * Select/Start, Menu/hotkey) were cross-validated against the
+	 * vendor-extracted devicetree but never confirmed on an actual
+	 * device. Re-verify all of it once hardware testing resumes.
 	 */
 	builtin_gamepad: gkd-pixel2-joypad {
 		compatible = "rocknix-singleadc-joypad";
@@ -182,26 +182,16 @@
 			linux,code = <BTN_DPAD_RIGHT>;
 		};
 
-		/*
-		 * TODO: A/B are swapped - confirmed on real hardware. The
-		 * physical button labeled A produces BTN_SOUTH and the one
-		 * labeled B produces BTN_EAST, the opposite of what's wired
-		 * below. Needs the linux,code (or gpios) values swapped
-		 * between these two nodes, and the downstream input configs
-		 * (es_input.cfg, retroarch-joypads/gamepads/gkd_pixel2_joypad.cfg)
-		 * re-checked against real hardware once fixed - see the
-		 * broader input-updates TODO on the joypad node above this.
-		 */
 		button-a {
 			gpios = <&gpio3 RK_PD1 GPIO_ACTIVE_LOW>;
-			label = "EAST";
-			linux,code = <BTN_EAST>;
+			label = "SOUTH";
+			linux,code = <BTN_SOUTH>;
 		};
 
 		button-b {
 			gpios = <&gpio3 RK_PD2 GPIO_ACTIVE_LOW>;
-			label = "SOUTH";
-			linux,code = <BTN_SOUTH>;
+			label = "EAST";
+			linux,code = <BTN_EAST>;
 		};
 
 		button-x {
