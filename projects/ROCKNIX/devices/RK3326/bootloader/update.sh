@@ -26,10 +26,22 @@ SUBDEVICE=$(sed -n 's|^.* uboot.hwid_adc=\([^, ]\),.*$|\1|p' /proc/cmdline)
 if [ -n "$SUBDEVICE" ]; then
   log "Subdevice from cmdline: $SUBDEVICE"
 elif [ -f $BOOT_ROOT/boot.scr ]; then
-  grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.scr && SUBDEVICE=a || SUBDEVICE=b
+  if grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.scr; then
+    SUBDEVICE=a
+  elif grep -q "rk3326s-gkd-pixel2.dtb" $BOOT_ROOT/boot.scr; then
+    SUBDEVICE=c
+  else
+    SUBDEVICE=b
+  fi
   log "Subdevice from boot.scr: $SUBDEVICE"
 elif [ -f $BOOT_ROOT/boot.ini ]; then
-  grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.ini && SUBDEVICE=a || SUBDEVICE=b
+  if grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.ini; then
+    SUBDEVICE=a
+  elif grep -q "rk3326s-gkd-pixel2.dtb" $BOOT_ROOT/boot.ini; then
+    SUBDEVICE=c
+  else
+    SUBDEVICE=b
+  fi
   log "Subdevice from boot.ini: $SUBDEVICE"
 else
   SUBDEVICE=a
@@ -59,6 +71,9 @@ CONSOLEDEV=$(grep -l Y /sys/devices/platform/*/*/*/tty/tty*/console | head -1 | 
 if [ ${SUBDEVICE} == "a" ]; then
   log "Using legacy u-boot "
   UBOOT_VARIANT="a_uboot.bin"
+elif [ ${SUBDEVICE} == "c" ]; then
+  log "Using GKD Pixel2 u-boot"
+  UBOOT_VARIANT="c_uboot.bin"
 elif [ -z "${CONSOLEDEV}" ]; then
   log "Cannot find UART console"
   UBOOT_VARIANT="b_uboot.bin"
