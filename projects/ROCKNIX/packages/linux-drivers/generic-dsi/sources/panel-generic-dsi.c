@@ -448,15 +448,6 @@ static int generic_panel_prepare(struct drm_panel *panel)
 
     msleep(ctx->delays.init);
 
-    /*
-     * Init sequence (and set-display-on/exit-sleep, if not already
-     * embedded in the panel_description) is sent here, from .prepare(),
-     * matching the vendor's own confirmed-working panel-simple.c driver
-     * (panel_simple_prepare() sends its on_cmds the same way, entirely
-     * before its .enable() runs) - not mainline's panel-sitronix-st7703.c
-     * convention of sending it from .enable(), which was tried here
-     * previously and didn't match this hardware.
-     */
     ret = generic_panel_init_sequence(ctx);
     if (ret < 0) {
         dev_err(ctx->dev, "Panel init sequence failed: %d\n", ret);
