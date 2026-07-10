@@ -17,7 +17,6 @@ PKG_PATCH_DIRS="${LINUX} mainline ${DEVICE} default"
 
 [[ "${DEVICE}" == RK* ]] && PKG_PATCH_DIRS+=" mainline-rockchip"
 [[ "${DEVICE}" == SM* ]] && PKG_DEPENDS_TARGET+=" mkbootimg:host"
-[[ "${ROCKNIX_JOYPAD}" == "yes" ]] && PKG_PATCH_DIRS+=" rocknix-joypad"
 
 case ${DEVICE} in
   RK3588)
@@ -26,7 +25,7 @@ case ${DEVICE} in
     PKG_GIT_CLONE_BRANCH="rk-6.1-rkr3"
     PKG_PATCH_DIRS="${LINUX} ${DEVICE} default"
     ;;
-  SM6115|SM8250|SM8550|SM8650|AMD64)
+  RK3326|SM6115|SM8250|SM8550|SM8650|AMD64)
     PKG_VERSION="7.1.2"
     PKG_URL="https://www.kernel.org/pub/linux/kernel/v${PKG_VERSION/.*/}.x/${PKG_NAME}-${PKG_VERSION}.tar.xz"
     PKG_PATCH_DIRS+=" 7.0"
@@ -41,12 +40,14 @@ case ${DEVICE} in
     PKG_URL="https://www.kernel.org/pub/linux/kernel/v${PKG_VERSION/.*/}.x/${PKG_NAME}-${PKG_VERSION}.tar.xz"
     PKG_PATCH_DIRS+=" 7.0"
     ;;
-  *)
-    PKG_VERSION="6.12.79"
-    PKG_PATCH_DIRS+=" 6.12-LTS"
-    PKG_URL="https://www.kernel.org/pub/linux/kernel/v${PKG_VERSION/.*/}.x/${PKG_NAME}-${PKG_VERSION}.tar.xz"
-    ;;
 esac
+
+if [[ "${ROCKNIX_JOYPAD}" == "yes" ]]; then
+  case "${PKG_VERSION}" in
+    7.1*) PKG_PATCH_DIRS+=" rocknix-joypad-7.1" ;;
+    *)    PKG_PATCH_DIRS+=" rocknix-joypad" ;;
+  esac
+fi
 
 PKG_KERNEL_CFG_FILE=$(kernel_config_path) || die
 
