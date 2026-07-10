@@ -409,13 +409,24 @@
 	 * but never actually armed an IRQ as a wake source) was tried and
 	 * tested on real hardware - no change in behavior, so that was not
 	 * the (or not the only) root cause. Reverted rather than kept as a
-	 * no-op patch. Still unexplained: possibly the missing SoC<->PMIC
-	 * SLP-pin pinmux handshake the vendor kernel wires here (see the
-	 * unused soc_slppin_gpio/rst/slp pinctrl entries below, which have
-	 * no mainline binding to attach to - see rk8xx_suspend()/
-	 * rk8xx_resume() in drivers/mfd/rk8xx-core.c, which only handles the
-	 * PMIC-internal SLPPIN register, not the SoC-side GPIO pinmux), or
-	 * something else entirely. Needs further investigation.
+	 * no-op patch.
+	 *
+	 * Root cause found: on PX30S, the deepest suspend modes are governed
+	 * by ATF/BL31 firmware, not Linux - device_init_wakeup()/
+	 * enable_irq_wake() only keep an IRQ line unmasked, but by the time
+	 * a sleep mode this deep runs, the CPU cores are already powered off
+	 * and firmware alone decides what wakes them. The rockchip-suspend
+	 * node below (compatible = "rockchip,pm-px30") already carries the
+	 * correct rockchip,sleep-mode-config/wakeup-config values copied from
+	 * the vendor devicetree, but nothing in this kernel ever parsed that
+	 * compatible string or sent those values to firmware - confirmed via
+	 * the vendor tree's drivers/soc/rockchip/rockchip_pm_config.c, ported
+	 * (trimmed to just this board's two properties) in
+	 * 034-px30s-suspend-wakeup-config.patch. Not yet confirmed on real
+	 * hardware whether this board's BL31 blob actually implements the
+	 * SIP_SUSPEND_MODE (0x82000003) call the driver issues - if it
+	 * doesn't, the call is a silent no-op and wake-from-sleep will still
+	 * be broken.
 	 */
 	rk817: pmic@20 {
 		compatible = "rockchip,rk817";

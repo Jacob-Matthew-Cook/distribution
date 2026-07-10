@@ -1,0 +1,147 @@
+--- a/drivers/soc/rockchip/Kconfig	2026-07-10 14:50:44.869474205 -0400
++++ b/drivers/soc/rockchip/Kconfig	2026-07-10 14:51:07.731131958 -0400
+@@ -40,4 +40,15 @@
+ 	  on this platform. That will create all the power capping capable
+ 	  devices.
+ 
++config ROCKCHIP_SUSPEND_MODE
++	bool "Rockchip suspend mode config"
++	depends on OF && SUSPEND
++	help
++	  Say y here to tell the ATF/BL31 firmware which low-power mode and
++	  wakeup sources to use when entering suspend-to-RAM, via the
++	  rockchip,sleep-mode-config and rockchip,wakeup-config properties on
++	  a "rockchip-suspend" devicetree node. Without this, boards that rely
++	  on it enter suspend correctly but never wake from it, since nothing
++	  tells firmware which wakeup sources to arm before powering down.
++
+ endif
+
+--- a/drivers/soc/rockchip/Makefile	2026-07-10 14:50:44.870474190 -0400
++++ b/drivers/soc/rockchip/Makefile	2026-07-10 14:50:56.391299109 -0400
+@@ -6,3 +6,4 @@
+ obj-$(CONFIG_ROCKCHIP_CPUINFO) += rockchip-cpuinfo.o
+ obj-$(CONFIG_ROCKCHIP_IODOMAIN) += io-domain.o
+ obj-$(CONFIG_ROCKCHIP_DTPM) += dtpm.o
++obj-$(CONFIG_ROCKCHIP_SUSPEND_MODE) += rockchip_pm_config.o
+
+--- /dev/null
++++ b/drivers/soc/rockchip/rockchip_pm_config.c
+@@ -0,0 +1,117 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Rockchip suspend mode configuration.
++ *
++ * On PX30S (and other Rockchip SoCs using the same mechanism), the deepest
++ * suspend-to-RAM modes are managed by the ATF/BL31 firmware, not Linux: the
++ * kernel's own device_init_wakeup()/enable_irq_wake() plumbing only affects
++ * whether Linux keeps an IRQ line unmasked, but by the time a "sleep-mode"
++ * this deep runs, the CPU cores themselves are powered off and firmware is
++ * what decides which physical event is allowed to bring them back. Without
++ * telling firmware which wakeup sources to arm, a board can enter suspend
++ * correctly and simply never wake from it - which is exactly what
++ * rockchip,sleep-mode-config and rockchip,wakeup-config (read from a
++ * "rockchip-suspend" devicetree node) are for.
++ *
++ * Trimmed from the vendor rockchip-linux/kernel's
++ * drivers/soc/rockchip/rockchip_pm_config.c: that driver also handles
++ * virtual-poweroff, MCU sleep tags, GPIO power-rail sequencing, and
++ * regulator-list toggling around suspend, none of which this board's
++ * devicetree populates. That extra code depends on a fragile out-of-tree
++ * include of drivers/regulator/internal.h to reach a static, non-exported
++ * of_find_regulator_by_node(), and on legacy of_gpio.h helpers - not worth
++ * carrying for properties nothing here sets. Only the sleep-mode-config and
++ * wakeup-config path is ported.
++ */
++
++#include <linux/arm-smccc.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/suspend.h>
++
++#define SIP_SUSPEND_MODE	0x82000003
++#define SUSPEND_MODE_CONFIG	0x01
++#define WKUP_SOURCE_CONFIG	0x02
++#define LINUX_PM_STATE		0x09
++
++static u32 rk_sleep_mode_config;
++static u32 rk_wakeup_config;
++
++static void rk_pm_set_suspend_mode(u32 ctrl, u32 config1, u32 config2)
++{
++	struct arm_smccc_res res;
++
++	arm_smccc_smc(SIP_SUSPEND_MODE, ctrl, config1, config2,
++		      0, 0, 0, 0, &res);
++}
++
++static int rk_pm_config_prepare(struct device *dev)
++{
++	rk_pm_set_suspend_mode(LINUX_PM_STATE, PM_SUSPEND_MEM, 0);
++
++	if (rk_sleep_mode_config)
++		rk_pm_set_suspend_mode(SUSPEND_MODE_CONFIG,
++					rk_sleep_mode_config, 0);
++	if (rk_wakeup_config)
++		rk_pm_set_suspend_mode(WKUP_SOURCE_CONFIG,
++					rk_wakeup_config, 0);
++
++	return 0;
++}
++
++static const struct dev_pm_ops rk_pm_config_ops = {
++	.prepare = rk_pm_config_prepare,
++};
++
++static int rk_pm_config_probe(struct platform_device *pdev)
++{
++	struct device_node *node;
++
++	node = of_find_node_by_name(NULL, "rockchip-suspend");
++	if (!node)
++		return -ENODEV;
++
++	if (of_property_read_u32(node, "rockchip,sleep-mode-config",
++				  &rk_sleep_mode_config)) {
++		dev_warn(&pdev->dev, "not set sleep-mode-config\n");
++	} else {
++		rk_pm_set_suspend_mode(SUSPEND_MODE_CONFIG,
++					rk_sleep_mode_config, 0);
++	}
++
++	if (of_property_read_u32(node, "rockchip,wakeup-config",
++				  &rk_wakeup_config)) {
++		dev_warn(&pdev->dev, "not set wakeup-config\n");
++	} else {
++		rk_pm_set_suspend_mode(WKUP_SOURCE_CONFIG,
++					rk_wakeup_config, 0);
++	}
++
++	of_node_put(node);
++
++	return 0;
++}
++
++static const struct of_device_id rk_pm_config_of_match[] = {
++	{ .compatible = "rockchip,pm-px30", },
++	{ }
++};
++
++static struct platform_driver rk_pm_config_driver = {
++	.probe = rk_pm_config_probe,
++	.driver = {
++		.name = "rockchip-pm",
++		.of_match_table = rk_pm_config_of_match,
++		.pm = &rk_pm_config_ops,
++	},
++};
++
++static int __init rk_pm_config_init(void)
++{
++	return platform_driver_register(&rk_pm_config_driver);
++}
++late_initcall_sync(rk_pm_config_init);
++
++MODULE_DESCRIPTION("Rockchip suspend mode config");
++MODULE_LICENSE("GPL");

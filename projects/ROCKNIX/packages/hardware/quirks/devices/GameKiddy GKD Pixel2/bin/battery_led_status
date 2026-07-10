@@ -1,0 +1,246 @@
+#!/bin/sh
+#
+# Battery / Charging LED indicator
+#
+# LED layout:
+#   battery4 = Green (top)
+#   battery3 = Green
+#   battery2 = Green
+#   battery1 = Green (bottom)
+#   battery0 = Red (bottom)
+#
+# LEDs are active-low:
+#   0 = ON
+#   1 = OFF
+#
+# Battery mode:
+#   85-100% : G G G G
+#   60-84%  : G G G
+#   45-59%  : G G
+#   30-44%  : G
+#   15-29%  : Yellow
+#    5-14%  : Red
+#    0-4%   : Flash Red
+#
+# Charging mode:
+#   85-100% : Yellow + G G G
+#   60-84%  : Yellow + G G
+#   45-59%  : Yellow + G
+#    5-44%  : Yellow
+#    0-4%   : Flash Yellow
+#
+# Debug:
+#   ./battery_led.sh 50
+#   Sets 50% display and exits
+#
+
+. /etc/profile.d/001-functions
+
+RED="/sys/class/leds/battery0/brightness"
+G1="/sys/class/leds/battery1/brightness"
+G2="/sys/class/leds/battery2/brightness"
+G3="/sys/class/leds/battery3/brightness"
+G4="/sys/class/leds/battery4/brightness"
+
+led_on()
+{
+    echo 0 > "$1"
+}
+
+led_off()
+{
+    echo 1 > "$1"
+}
+
+all_off()
+{
+    led_off "$RED"
+    led_off "$G1"
+    led_off "$G2"
+    led_off "$G3"
+    led_off "$G4"
+}
+
+find_charger()
+{
+    for hwmon in /sys/class/hwmon/hwmon*; do
+        if [ "$(cat "$hwmon/name" 2>/dev/null)" = "rk817_charger" ]; then
+            echo "$hwmon"
+            return
+        fi
+    done
+}
+
+CHARGER_HWMON=$(find_charger)
+
+is_charging()
+{
+    if [ -n "$CHARGER_HWMON" ] &&
+       [ -f "$CHARGER_HWMON/in0_average" ]; then
+
+        VOLTAGE=$(cat "$CHARGER_HWMON/in0_average" 2>/dev/null)
+
+        if [ "$VOLTAGE" -ge 1000 ]; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+set_battery_level()
+{
+    all_off
+
+    case "$1" in
+        4)
+            led_on "$G1"
+            led_on "$G2"
+            led_on "$G3"
+            led_on "$G4"
+            ;;
+        3)
+            led_on "$G1"
+            led_on "$G2"
+            led_on "$G3"
+            ;;
+        2)
+            led_on "$G1"
+            led_on "$G2"
+            ;;
+        1)
+            led_on "$G1"
+            ;;
+        yellow)
+            led_on "$RED"
+            led_on "$G1"
+            ;;
+        red)
+            led_on "$RED"
+            ;;
+    esac
+}
+
+set_charging_level()
+{
+    all_off
+
+    # Always show charging with yellow bottom LED
+    led_on "$RED"
+    led_on "$G1"
+
+    case "$1" in
+        3)
+            led_on "$G2"
+            led_on "$G3"
+            led_on "$G4"
+            ;;
+        2)
+            led_on "$G2"
+            led_on "$G3"
+            ;;
+        1)
+            led_on "$G2"
+            ;;
+    esac
+}
+
+flash_battery()
+{
+    all_off
+
+    while :; do
+        if [ -z "$1" ]; then
+            PCT=$(battery_percent | tr -d '\r\n')
+            [ "$PCT" -ge 5 ] && break
+        fi
+
+        led_on "$RED"
+        sleep 0.5
+        led_off "$RED"
+        sleep 0.5
+    done
+}
+
+flash_charging()
+{
+    all_off
+
+    while :; do
+        if [ -z "$1" ]; then
+            PCT=$(battery_percent | tr -d '\r\n')
+            [ "$PCT" -ge 5 ] && break
+        fi
+
+        led_on "$RED"
+        led_on "$G1"
+        sleep 0.5
+
+        led_off "$RED"
+        led_off "$G1"
+        sleep 0.5
+    done
+}
+
+show_level()
+{
+    PCT="$1"
+
+    if is_charging; then
+
+        if [ "$PCT" -lt 5 ]; then
+            flash_charging "$DEBUG"
+        elif [ "$PCT" -ge 85 ]; then
+            set_charging_level 3
+        elif [ "$PCT" -ge 60 ]; then
+            set_charging_level 2
+        elif [ "$PCT" -ge 45 ]; then
+            set_charging_level 1
+        else
+            set_charging_level 0
+        fi
+
+    else
+
+        if [ "$PCT" -lt 5 ]; then
+            flash_battery "$DEBUG"
+        elif [ "$PCT" -ge 85 ]; then
+            set_battery_level 4
+        elif [ "$PCT" -ge 60 ]; then
+            set_battery_level 3
+        elif [ "$PCT" -ge 45 ]; then
+            set_battery_level 2
+        elif [ "$PCT" -ge 30 ]; then
+            set_battery_level 1
+        elif [ "$PCT" -ge 15 ]; then
+            set_battery_level yellow
+        else
+            set_battery_level red
+        fi
+    fi
+}
+
+
+# Debug mode
+if [ -n "$1" ]; then
+    DEBUG=1
+    show_level "$1"
+    exit 0
+fi
+
+
+# Normal daemon mode
+while :; do
+    PCT=$(battery_percent | tr -d '\r\n')
+
+    case "$PCT" in
+        ''|*[!0-9]*)
+            sleep 1
+            continue
+            ;;
+    esac
+
+    show_level "$PCT"
+
+    sleep 10
+done
