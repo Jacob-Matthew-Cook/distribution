@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# Temporary workaround: GKD Pixel2 enters "mem" (deep) suspend correctly
+# but never wakes from it (see the KNOWN ONGOING ISSUE comment on the
+# rk817 node in rk3326s-gkd-pixel2.dts) - firmware alone decides what
+# wakes the CPU cores once they're powered off for a sleep mode this
+# deep, and two separate attempts at fixing that (a dev_pm_set_wake_irq()
+# kernel patch, and a ported rockchip_pm_config.c sending the correct
+# wakeup-config to firmware via SIP_SUSPEND_MODE) were both tested on
+# real hardware with no change in behavior. Until the real root cause is
+# found, default to "freeze" (s2idle) instead: CPU cores stay mostly on
+# and idle rather than powering off, so a normal GPIO IRQ (e.g. the power
+# button) can wake the system the ordinary way, without depending on
+# whatever firmware-level wake-source arming "mem" needs and isn't
+# getting. Same mechanism RK3576 uses for the same class of issue.
+
+. /etc/profile.d/001-functions
+
+MYSLEEPMODE=$(get_setting system.suspendmode)
+if [ -z "${MYSLEEPMODE}" ]
+then
+  /usr/bin/suspendmode freeze
+fi

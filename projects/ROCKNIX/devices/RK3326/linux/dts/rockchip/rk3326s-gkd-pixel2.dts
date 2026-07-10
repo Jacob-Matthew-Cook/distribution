@@ -411,7 +411,7 @@
 	 * the (or not the only) root cause. Reverted rather than kept as a
 	 * no-op patch.
 	 *
-	 * Root cause found: on PX30S, the deepest suspend modes are governed
+	 * A second attempt: on PX30S, the deepest suspend modes are governed
 	 * by ATF/BL31 firmware, not Linux - device_init_wakeup()/
 	 * enable_irq_wake() only keep an IRQ line unmasked, but by the time
 	 * a sleep mode this deep runs, the CPU cores are already powered off
@@ -419,14 +419,16 @@
 	 * node below (compatible = "rockchip,pm-px30") already carries the
 	 * correct rockchip,sleep-mode-config/wakeup-config values copied from
 	 * the vendor devicetree, but nothing in this kernel ever parsed that
-	 * compatible string or sent those values to firmware - confirmed via
-	 * the vendor tree's drivers/soc/rockchip/rockchip_pm_config.c, ported
-	 * (trimmed to just this board's two properties) in
-	 * 034-px30s-suspend-wakeup-config.patch. Not yet confirmed on real
-	 * hardware whether this board's BL31 blob actually implements the
-	 * SIP_SUSPEND_MODE (0x82000003) call the driver issues - if it
-	 * doesn't, the call is a silent no-op and wake-from-sleep will still
-	 * be broken.
+	 * compatible string or sent those values to firmware. Ported a
+	 * trimmed drivers/soc/rockchip/rockchip_pm_config.c (from the vendor
+	 * tree, just this board's two properties) to send them via the
+	 * SIP_SUSPEND_MODE (0x82000003) call - confirmed this board's BL31
+	 * blob does implement that call (present in its stripped binary as
+	 * suspend_mode_handler/rockchip_sip_svc, with wake-source log strings
+	 * matching this board's wakeup-config bits), but tested on real
+	 * hardware with no change in behavior. Reverted rather than kept as a
+	 * no-op patch. Root cause still unexplained - needs further
+	 * investigation.
 	 */
 	rk817: pmic@20 {
 		compatible = "rockchip,rk817";
