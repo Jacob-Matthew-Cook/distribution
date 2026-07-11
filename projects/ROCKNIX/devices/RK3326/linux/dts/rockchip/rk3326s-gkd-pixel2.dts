@@ -665,6 +665,14 @@
 };
 
 &usb20_otg {
+	/*
+	 * Without this, dwc2 never enables the PMIC's otg_switch 5V boost
+	 * regulator in host mode (confirmed via stock-firmware dmesg: dwc2
+	 * looks up "vbus-supply" and otg_switch stays disabled with nothing
+	 * to enable it) - so a plugged-in peripheral gets data lines but no
+	 * bus power and never enumerates.
+	 */
+	vbus-supply = <&otg_switch>;
 	status = "okay";
 };
 
