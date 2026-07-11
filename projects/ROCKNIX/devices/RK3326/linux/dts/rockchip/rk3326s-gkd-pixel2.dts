@@ -2,16 +2,14 @@
 /*
  * Copyright (c) 2024 GameKiddy
  *
- * Reconstructed from the vendor-extracted rk3326s-gkd-pixel2.dtsi (see that
- * file for the full, as-shipped decompiled vendor tree) into a mainline/
- * ROCKNIX-style board .dts on top of the shared rk3326.dtsi, mirroring the
- * shape of the other standalone (non-shared-dtsi) RK3326 boards in this tree
- * (rk3326-gameforce-chi.dts, rk3326-gameconsole-r3xs.dtsi).
+ * Reconstructed from the vendor-extracted rk3326s-gkd-pixel2.dtsi into a
+ * mainline/ROCKNIX-style board .dts on top of the shared rk3326.dtsi,
+ * mirroring the other standalone RK3326 boards in this tree (e.g.
+ * rk3326-gameforce-chi.dts).
  *
- * The GKD Pixel 2 has no analog sticks - every input is a plain GPIO switch -
- * so the gamepad uses ROCKNIX's rocknix-singleadc-joypad driver with
- * amux-count = <0> (no ADC channels), the same convention already used by
- * the other all-digital RK3326 boards (see rk3326-gameconsole-r33s.dts).
+ * No analog sticks - every input is a plain GPIO switch - so the gamepad
+ * uses rocknix-singleadc-joypad with amux-count = <0>, same as the other
+ * all-digital RK3326 boards (e.g. rk3326-gameconsole-r33s.dts).
  */
 
 /dts-v1/;
@@ -112,13 +110,10 @@
 	};
 
 	/*
-	 * TODO (input updates): this whole node's button mapping - and the
-	 * es_input.cfg / retroarch-joypads/gamepads/gkd_pixel2_joypad.cfg
-	 * entries derived from it - needs real-hardware validation. The A/B
-	 * swap has been fixed below; the rest (D-pad, X/Y, L1/R1/L2/R2,
-	 * Select/Start, Menu/hotkey) were cross-validated against the
-	 * vendor-extracted devicetree but never confirmed on an actual
-	 * device. Re-verify all of it once hardware testing resumes.
+	 * TODO: D-pad/X-Y/shoulder/select-start/menu mappings below are
+	 * cross-validated against the vendor devicetree but not yet
+	 * confirmed on real hardware (unlike the A/B swap). Re-verify once
+	 * hardware testing resumes.
 	 */
 	builtin_gamepad: gkd-pixel2-joypad {
 		compatible = "rocknix-singleadc-joypad";
@@ -135,27 +130,16 @@
 		poll-interval = <10>;
 
 		/*
-		 * Rumble motor disabled again: re-enabling it (pwms/pwm-names/
-		 * rumble-boost-*, plus &pwm0 status=okay below) reproduced
-		 * the same "runs constantly" report as before. Confirmed on
-		 * real hardware this time: full strength, starts only once
-		 * Linux boots (not at power-on), and persists across both
-		 * PWM_POLARITY_NORMAL and PWM_POLARITY_INVERTED - so it isn't
-		 * a simple active-high/active-low mismatch (that only affects
-		 * the waveform while actively toggling, not the idle/disabled
-		 * electrical state). The C driver logic itself is confirmed
-		 * correct: pwm_init_state() (include/linux/pwm.h) unconditionally
-		 * zeroes duty_cycle before joypad_rumble_setup() only sets
-		 * enabled=false on top of that, so period=200ms/duty=0/disabled
-		 * is genuinely what's being applied in software. The mismatch
-		 * is happening below that - either a Rockchip PWM chip-driver
-		 * quirk on disable, or something else entirely - not yet
-		 * diagnosed. Leaving pwms/pwm-names/rumble-boost-* out entirely
-		 * means has_rumble stays false in rocknix-singleadc-joypad
-		 * (device_property_present(dev, "pwm-names") is how it decides),
-		 * so the driver never touches this pin at all. &pwm0 is also
-		 * disabled below for the same reason, at the hardware/clock
-		 * level.
+		 * Rumble motor disabled: re-enabling it (pwms/pwm-names/
+		 * rumble-boost-*, plus &pwm0 status=okay below) makes the
+		 * motor run constantly at full strength once Linux boots,
+		 * regardless of PWM_POLARITY_NORMAL vs INVERTED - so it isn't
+		 * a simple polarity mismatch, and the software side (duty=0,
+		 * disabled) is confirmed correctly applied. Root cause (likely
+		 * a PWM chip-driver quirk on disable) not yet found. Leaving
+		 * pwms/pwm-names/rumble-boost-* out entirely keeps has_rumble
+		 * false in rocknix-singleadc-joypad, and &pwm0 disabled below
+		 * for the same reason.
 		 */
 
 		button-up {
@@ -287,8 +271,8 @@
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_mipi_lcd0";
 		gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_LOW>;
-                pinctrl-0 = <&vcc_mipi_lcd_n>;
-                pinctrl-names = "default";
+		pinctrl-0 = <&vcc_mipi_lcd_n>;
+		pinctrl-names = "default";
 		regulator-boot-on;
 
 		regulator-state-mem {
@@ -358,7 +342,7 @@
 		enable-gpios = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
-                pinctrl-0 = <&dsi0_lcd_gpio>;
+		pinctrl-0 = <&dsi0_lcd_gpio>;
 		/*
 		 * 90 produced an upside-down image (180 degrees off from
 		 * correct) once the panel actually started displaying
@@ -401,33 +385,14 @@
 	status = "okay";
 
 	/*
-	 * KNOWN ONGOING ISSUE: device enters sleep correctly but does not
-	 * wake from it at all (confirmed on real hardware). A patch to
-	 * drivers/input/misc/rk805-pwrkey.c adding dev_pm_set_wake_irq() for
-	 * the power-button fall_irq (the driver called device_init_wakeup()
-	 * but never actually armed an IRQ as a wake source) was tried and
-	 * tested on real hardware - no change in behavior, so that was not
-	 * the (or not the only) root cause. Reverted rather than kept as a
-	 * no-op patch.
-	 *
-	 * A second attempt: on PX30S, the deepest suspend modes are governed
-	 * by ATF/BL31 firmware, not Linux - device_init_wakeup()/
-	 * enable_irq_wake() only keep an IRQ line unmasked, but by the time
-	 * a sleep mode this deep runs, the CPU cores are already powered off
-	 * and firmware alone decides what wakes them. The rockchip-suspend
-	 * node below (compatible = "rockchip,pm-px30") already carries the
-	 * correct rockchip,sleep-mode-config/wakeup-config values copied from
-	 * the vendor devicetree, but nothing in this kernel ever parsed that
-	 * compatible string or sent those values to firmware. Ported a
-	 * trimmed drivers/soc/rockchip/rockchip_pm_config.c (from the vendor
-	 * tree, just this board's two properties) to send them via the
-	 * SIP_SUSPEND_MODE (0x82000003) call - confirmed this board's BL31
-	 * blob does implement that call (present in its stripped binary as
-	 * suspend_mode_handler/rockchip_sip_svc, with wake-source log strings
-	 * matching this board's wakeup-config bits), but tested on real
-	 * hardware with no change in behavior. Reverted rather than kept as a
-	 * no-op patch. Root cause still unexplained - needs further
-	 * investigation.
+	 * KNOWN ISSUE: device suspends correctly but never wakes (confirmed
+	 * on hardware). Two fixes were tried and reverted after testing
+	 * showed no change: (1) dev_pm_set_wake_irq() for the rk805-pwrkey
+	 * fall_irq, and (2) porting rockchip_pm_config.c to forward this
+	 * board's rockchip,sleep-mode-config/wakeup-config values to BL31 via
+	 * the SIP_SUSPEND_MODE call. On PX30S the deepest sleep states are
+	 * governed by ATF/BL31 firmware rather than Linux, so root cause
+	 * likely lies there - not yet diagnosed further.
 	 */
 	rk817: pmic@20 {
 		compatible = "rockchip,rk817";
@@ -672,23 +637,15 @@
 };
 
 /*
- * Root cause found: this board's silicon is PX30S, a distinct chip variant
- * from plain PX30 (confirmed via the vendor kernel's own detection
- * register, DDR_GRF_CON1 bits[15:14] == 0b11). The vendor kernel special-
- * cases PX30S in this exact tsadc driver (different ADC init sequence,
- * a mandatory 4MHz clock rate instead of whatever rate is assigned here,
- * a ~2.1ms post-enable settle delay, and a linear code<->temp conversion
- * instead of a lookup table) - see 023-px30s-tsadc-support.patch, which
- * ports all of this from the vendor kernel and adds the
+ * This board's silicon is PX30S, a distinct chip variant from plain PX30
+ * (confirmed via DDR_GRF_CON1 bits[15:14] == 0b11), needing a different
+ * ADC init sequence, a mandatory 4MHz clock rate, a ~2.1ms post-enable
+ * settle delay, and a linear code<->temp conversion instead of a lookup
+ * table - see 023-px30s-tsadc-support.patch, which adds the
  * "rockchip,px30s-tsadc" compatible used below.
  *
- * The collaborator's working dts leaves this disabled entirely, citing
- * raw ADC reads still stuck at 0x0 under both SPLs and a hardware-level
- * rockchip,hw-tshut-temp auto-reset circuit (unreachable from software)
- * that forced a silent hard reset even with critical trips raised to
- * 300C. Re-enabled here per explicit request - if a silent reset recurs,
- * that hw-tshut circuit is the first place to look, since it sits outside
- * Linux's control entirely.
+ * If a silent reset recurs, check the hardware rockchip,hw-tshut-temp
+ * auto-reset circuit first - it sits outside Linux's control entirely.
  */
 &tsadc {
 	compatible = "rockchip,px30s-tsadc";
@@ -783,9 +740,8 @@
 	vcc-mipi-lcd {
 		vcc_mipi_lcd_n: vcc-mipi-lcd-n {
 			rockchip,pins = <0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
-		 };
+		};
 	};
-
 
 	pmic {
 		pmic_int: pmic-int {
