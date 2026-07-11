@@ -74,15 +74,9 @@ mkimage_dtb() {
   echo "image: copying device trees..."
   case "$DEVICE" in
     RK3326)
-      if [ "${SUBDEVICE}" = "c" ]; then
-        # GKD Pixel2 boots a single fixed dtb by name (no FDTDIR/hwid
-        # autodetection) - skip every other RK3326 board's dtb.
-        mcopy "${RELEASE_DIR}/3rdparty/bootloader/device_trees/rk3326s-gkd-pixel2.dtb" ::
-      else
-        mcopy "${RELEASE_DIR}/3rdparty/bootloader/device_trees/"*.dtb ::
-        mcopy "${RELEASE_DIR}/3rdparty/bootloader/stock" ::
-        mcopy "${RELEASE_DIR}/3rdparty/bootloader/overlays" ::
-      fi
+      mcopy "${RELEASE_DIR}/3rdparty/bootloader/device_trees/"*.dtb ::
+      mcopy "${RELEASE_DIR}/3rdparty/bootloader/stock" ::
+      mcopy "${RELEASE_DIR}/3rdparty/bootloader/overlays" ::
       ;;
     SM8550|SM8650|SM8750|SM8250|SM6115)
       mcopy -s -o "${RELEASE_DIR}/3rdparty/bootloader/boot" ::

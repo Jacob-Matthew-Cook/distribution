@@ -90,13 +90,6 @@ makeinstall_target() {
   cp -av uboot.bin.default "${INSTALL}/usr/share/bootloader/b_uboot.bin"
   cp -av uboot.bin.uart5 "${INSTALL}/usr/share/bootloader/b_uboot.bin.uart5"
 
-  # GKD Pixel2 (subdevice c): use ROCKNIX's own fully self-contained
-  # SPL+BL31+trust+u-boot-proper blob (same one used by subdevice b),
-  # dropping the vendor idbloader/trust combination from the earlier
-  # hybrid approach (u-boot-pixel2 package) now that this DDR blob is
-  # confirmed to declare LP4 @ 333MHz support matching this board's RAM.
-  cp -av uboot.bin.default "${INSTALL}/usr/share/bootloader/c_uboot.bin"
-
   find_dir_path config/extlinux || exit 3
   cp -av ${FOUND_PATH} "${INSTALL}/usr/share/bootloader/"
   sed -e "s/@EXTRA_CMDLINE@/${EXTRA_CMDLINE}/" \

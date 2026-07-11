@@ -26,26 +26,29 @@ SUBDEVICE=$(sed -n 's|^.* uboot.hwid_adc=\([^, ]\),.*$|\1|p' /proc/cmdline)
 if [ -n "$SUBDEVICE" ]; then
   log "Subdevice from cmdline: $SUBDEVICE"
 elif [ -f $BOOT_ROOT/boot.scr ]; then
-  if grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.scr; then
-    SUBDEVICE=a
-  elif grep -q "rk3326s-gkd-pixel2.dtb" $BOOT_ROOT/boot.scr; then
-    SUBDEVICE=c
-  else
-    SUBDEVICE=b
-  fi
+  grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.scr && SUBDEVICE=a || SUBDEVICE=b
   log "Subdevice from boot.scr: $SUBDEVICE"
 elif [ -f $BOOT_ROOT/boot.ini ]; then
-  if grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.ini; then
-    SUBDEVICE=a
-  elif grep -q "rk3326s-gkd-pixel2.dtb" $BOOT_ROOT/boot.ini; then
-    SUBDEVICE=c
-  else
-    SUBDEVICE=b
-  fi
+  grep -q "rk3326-anbernic-rg351m.dtb" $BOOT_ROOT/boot.ini && SUBDEVICE=a || SUBDEVICE=b
   log "Subdevice from boot.ini: $SUBDEVICE"
 else
   SUBDEVICE=a
   log "Subdevice fallback: $SUBDEVICE"
+fi
+
+# GKD Pixel2 (PX30S silicon) is folded into subdevice "b" - its u-boot/
+# boot.scr are identical to every other "b" board, only the DTB
+# (already selected by b_boot.ini's own register check) differs. Purely
+# for update-log clarity, confirm the SoC variant the same way
+# b_boot.ini does: PX30S and plain PX30 share the same base ID but
+# differ in the DDR_GRF_CON1 register (bits 15:14 read 0b11 only on
+# PX30S) - see rockchip_cpuinfo's px30_init() in
+# 030-px30s-cpuinfo-soc-detection.patch. This doesn't change SUBDEVICE
+# itself, since PX30S boards already correctly fall through to "b"
+# above, same as any other unlisted-by-name "b" board would.
+PX30_GRF_CON1=$(devmem 0xff630004 32 2>/dev/null)
+if [ -n "${PX30_GRF_CON1}" ] && [ $(( PX30_GRF_CON1 & 0xc000 )) -eq $(( 0xc000 )) ]; then
+  log "PX30S silicon detected (likely GKD Pixel2)"
 fi
 
 log "Updating device trees..."
@@ -71,9 +74,6 @@ CONSOLEDEV=$(grep -l Y /sys/devices/platform/*/*/*/tty/tty*/console | head -1 | 
 if [ ${SUBDEVICE} == "a" ]; then
   log "Using legacy u-boot "
   UBOOT_VARIANT="a_uboot.bin"
-elif [ ${SUBDEVICE} == "c" ]; then
-  log "Using GKD Pixel2 u-boot"
-  UBOOT_VARIANT="c_uboot.bin"
 elif [ -z "${CONSOLEDEV}" ]; then
   log "Cannot find UART console"
   UBOOT_VARIANT="b_uboot.bin"
