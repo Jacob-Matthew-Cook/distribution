@@ -376,7 +376,6 @@
 
 	ports {
 		mipi_out: port@1 {
-			rockchip,mipi-dsi-target-mbps = <333>;
 			reg = <1>;
 			mipi_out_panel: endpoint {
 				remote-endpoint = <&mipi_in_panel>;
