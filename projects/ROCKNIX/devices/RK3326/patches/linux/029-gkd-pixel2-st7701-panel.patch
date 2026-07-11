@@ -1,6 +1,6 @@
---- linux.orig/drivers/gpu/drm/panel/panel-sitronix-st7701.c	2026-07-09 04:38:14.332653326 +0000
-+++ linux/drivers/gpu/drm/panel/panel-sitronix-st7701.c	2026-07-09 19:26:57.642158072 +0000
-@@ -137,6 +137,7 @@ struct st7701 {
+--- a/drivers/gpu/drm/panel/panel-sitronix-st7701.c
++++ b/drivers/gpu/drm/panel/panel-sitronix-st7701.c
+@@ -137,6 +137,7 @@
  
  	struct regulator_bulk_data supplies[2];
  	struct gpio_desc *reset;
@@ -8,41 +8,23 @@
  	unsigned int sleep_delay;
  	enum drm_panel_orientation orientation;
  
-@@ -520,6 +521,102 @@ static void rg28xx_gip_sequence(struct s
+@@ -520,6 +521,84 @@
  	st7701_switch_cmd_bkx(st7701, false, 0);
  }
  
 +/*
-+ * DIAGNOSTIC / rule-out entry for the GameKiddy GKD Pixel 2.
++ * GIP init sequence for the GameKiddy GKD Pixel 2. Unlike the other panels
++ * in this file, this is NOT derived from the ST7701 datasheet formulas
++ * (pv_gamma/nv_gamma/vop_uv/...) - it's a byte-for-byte transcription of
++ * the raw vendor (Rockchip PX30 BSP) panel-init blob, cross-checked
++ * register-by-register against the public ST7701 BK0/BK1 command tables,
++ * confirming this is a genuine ST7701-family part mislabeled
++ * "sitronix,st7703" in the vendor tree.
 + *
-+ * Unlike the other panels in this file, this sequence is NOT derived from
-+ * the ST7701 datasheet formulas (Vop/Vcom/gamma tables etc via pv_gamma/
-+ * nv_gamma/vop_uv/...). It is a byte-for-byte transcription of the raw
-+ * vendor (Rockchip PX30 BSP) panel-init-sequence blob, already verified
-+ * against this panel's own vendor DT and cross-checked register-by-register
-+ * against the public ST7701 datasheet's BK0/BK1 command tables (LNESET/
-+ * PORCTRL/INVSEL on BK0, VRHS/VCOM/VGHSS/VGLS/PWCTRL1/PWCTRL2/MIPISET1 on
-+ * BK1) - it lines up cleanly, confirming this panel is a genuine ST7701-
-+ * family part mislabeled "sitronix,st7703" in the vendor tree.
-+ *
-+ * Two known deviations from a "clean" single-variable comparison against
-+ * the st7703-file version of this same panel:
-+ *
-+ *   1. st7701_prepare() unconditionally calls the generic, formula-driven
-+ *      st7701_init_sequence() before gip_sequence() runs. Since this panel
-+ *      doesn't use that formula path, the dummy pv_gamma/nv_gamma/vop_uv/
-+ *      etc fields below produce harmless throwaway BK0/BK1 register writes
-+ *      that get correctly overwritten a few instructions later, when this
-+ *      function re-selects the same banks and writes the exact vendor
-+ *      bytes. Electrically harmless, but it does mean a few extra writes
-+ *      happen that didn't happen in the st7703 version.
-+ *   2. st7701_dsi_probe() hardcodes dsi->mode_flags for every panel in this
-+ *      file as (VIDEO | VIDEO_BURST | LPM | CLOCK_NON_CONTINUOUS). This is
-+ *      NOT the same flag combination used for this panel in the st7703
-+ *      file (VIDEO | VIDEO_BURST | NO_EOT_PACKET | LPM) - it's missing
-+ *      NO_EOT_PACKET and adds CLOCK_NON_CONTINUOUS. That's a second,
-+ *      uncontrolled variable in this comparison; a different result here
-+ *      isn't purely attributable to "which .c file".
++ * st7701_prepare() unconditionally runs the generic, formula-driven
++ * st7701_init_sequence() first; its dummy pv_gamma/nv_gamma/vop_uv writes
++ * are harmlessly overwritten a few instructions later when this function
++ * re-selects the same banks and writes the exact vendor bytes below.
 + */
 +static void gkdpixel2_gip_sequence(struct st7701 *st7701)
 +{
@@ -111,24 +93,19 @@
  static int st7701_prepare(struct drm_panel *panel)
  {
  	struct st7701 *st7701 = panel_to_st7701(panel);
-@@ -533,6 +630,16 @@ static int st7701_prepare(struct drm_pan
+@@ -533,6 +612,11 @@
  		return ret;
  	msleep(20);
  
-+	/*
-+	 * Optional: a small number of clone boards route a separate
-+	 * power/logic enable line to the panel or its level-shifter,
-+	 * distinct from the DSI reset line. Most panels using this driver
-+	 * don't have one, in which case this is NULL and every gpiod_*
-+	 * call on it is a documented no-op.
-+	 */
++	/* Optional enable GPIO for clones with a separate panel/level-shifter
++	 * power line, distinct from reset; NULL (no-op) otherwise. */
 +	gpiod_set_value(st7701->enable_gpio, 1);
 +	msleep(20);
 +
  	gpiod_set_value(st7701->reset, 1);
  	msleep(150);
  
-@@ -574,6 +681,7 @@ static int st7701_unprepare(struct drm_p
+@@ -574,6 +658,7 @@
  	msleep(st7701->sleep_delay);
  
  	gpiod_set_value(st7701->reset, 0);
@@ -136,19 +113,14 @@
  
  	/**
  	 * During the Resetting period, the display will be blanked
-@@ -1135,6 +1243,63 @@ static const struct st7701_panel_desc rg
+@@ -1135,6 +1220,58 @@
  	.gip_sequence = rg28xx_gip_sequence,
  };
  
 +/*
-+ * Placeholder gamma/voltage parameters for the GKD Pixel 2 diagnostic
-+ * entry. These ARE NOT derived from this panel's real gamma/voltage
-+ * settings - they only exist because st7701_prepare() unconditionally
-+ * calls the generic, formula-driven st7701_init_sequence() before
-+ * gip_sequence() runs. Whatever BK0/BK1 registers that generic pass
-+ * writes using these placeholder values get correctly overwritten a few
-+ * instructions later by gkdpixel2_gip_sequence()'s exact vendor bytes.
-+ * Do not use these values as a reference for anything.
++ * Not real gamma/voltage values - st7701_prepare() always runs the generic
++ * formula path first, whose writes get overwritten by
++ * gkdpixel2_gip_sequence()'s actual vendor bytes right after.
 + */
 +static const struct drm_display_mode gkdpixel2_mode = {
 +	.clock		= 25000,
@@ -200,7 +172,7 @@
  static void st7701_cleanup(void *data)
  {
  	struct st7701 *st7701 = (struct st7701 *)data;
-@@ -1172,6 +1337,16 @@ static int st7701_probe(struct device *d
+@@ -1172,6 +1309,16 @@
  		return PTR_ERR(st7701->reset);
  	}
  
@@ -217,7 +189,7 @@
  	ret = of_drm_get_panel_orientation(dev->of_node, &st7701->orientation);
  	if (ret < 0)
  		return dev_err_probe(dev, ret, "Failed to get orientation\n");
-@@ -1264,6 +1439,7 @@ static const struct of_device_id st7701_
+@@ -1264,6 +1411,7 @@
  	{ .compatible = "anbernic,rg-arc-panel", .data = &rg_arc_desc },
  	{ .compatible = "densitron,dmt028vghmcmi-1a", .data = &dmt028vghmcmi_1a_desc },
  	{ .compatible = "elida,kd50t048a", .data = &kd50t048a_desc },

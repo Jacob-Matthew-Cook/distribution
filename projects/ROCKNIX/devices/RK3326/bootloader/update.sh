@@ -43,7 +43,7 @@ fi
 # b_boot.ini does: PX30S and plain PX30 share the same base ID but
 # differ in the DDR_GRF_CON1 register (bits 15:14 read 0b11 only on
 # PX30S) - see rockchip_cpuinfo's px30_init() in
-# 030-px30s-cpuinfo-soc-detection.patch. This doesn't change SUBDEVICE
+# 026-px30s-cpuinfo-soc-detection.patch. This doesn't change SUBDEVICE
 # itself, since PX30S boards already correctly fall through to "b"
 # above, same as any other unlisted-by-name "b" board would.
 PX30_GRF_CON1=$(devmem 0xff630004 32 2>/dev/null)

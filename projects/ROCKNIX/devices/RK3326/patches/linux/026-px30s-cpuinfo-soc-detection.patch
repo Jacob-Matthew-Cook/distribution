@@ -1,23 +1,17 @@
 --- /dev/null
 +++ b/include/linux/rockchip/cpu.h
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,191 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) 2017 Rockchip Electronics Co. Ltd.
 + *
 + * Ported from the Rockchip vendor BSP kernel
 + * (https://github.com/rockchip-linux/kernel) for PX30S/RK3326S support -
-+ * see 84d26633c7a4 ("soc: rockchip: add cpuid for px30/px30s"). Only the
-+ * SoC families actually reachable from this board's devicetree are worth
-+ * carrying, but the vendor file is small and self-contained, so the
-+ * unmodified per-SoC helpers are kept for fidelity with upstream rather
-+ * than trimmed down. Unlike the vendor source, this doesn't gate each SoC
-+ * family behind its own CONFIG_CPU_* symbol - mainline has no such
-+ * per-chip Kconfig options (it just uses ARCH_ROCKCHIP broadly), and
-+ * inventing a set of them purely to mirror the vendor tree isn't
-+ * warranted for what one board needs. The functions are always declared;
-+ * of_machine_is_compatible() and rockchip_soc_id remain the only run-time
-+ * gates, exactly as upstream.
++ * see 84d26633c7a4 ("soc: rockchip: add cpuid for px30/px30s"). Unlike the
++ * vendor source, this doesn't gate each SoC family behind its own
++ * CONFIG_CPU_* symbol - mainline has no such per-chip Kconfig options, so
++ * the functions are always declared; of_machine_is_compatible() and
++ * rockchip_soc_id remain the only run-time gates, exactly as upstream.
 + */
 +
 +#ifndef __LINUX_ROCKCHIP_CPU_H

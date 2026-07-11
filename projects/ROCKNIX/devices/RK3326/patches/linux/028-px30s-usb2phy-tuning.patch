@@ -8,19 +8,16 @@
  #include <linux/mfd/syscon.h>
  #include <linux/usb/of.h>
  #include <linux/usb/otg.h>
-@@ -1705,6 +1706,64 @@
+@@ -1705,6 +1706,61 @@
  	{ /* sentinel */ }
  };
  
 +/*
-+ * Ported from the vendor kernel's 711167d7b0b2 ("phy: rockchip: inno-usb2:
-+ * support rk3326s and px30s tuning") - PX30S needs different pre-emphasis
-+ * and squelch-trigger tuning than base PX30/RK3328 (a fix for some hosts
-+ * not recognizing the device over a 5m cable). Scoped to only fire on
-+ * confirmed PX30S hardware (soc_is_px30s()) rather than also wiring up the
-+ * vendor's parallel non-PX30S tuning branch, since this rk3328_phy_cfgs
-+ * table is shared with other, non-PX30S boards this hasn't been tested on
-+ * - leaving this a no-op for them preserves their exact current behavior.
++ * Ported from vendor commit 711167d7b0b2 ("support rk3326s and px30s
++ * tuning") - PX30S needs different pre-emphasis/squelch tuning than base
++ * PX30/RK3328 to fix some hosts not recognizing the device over a 5m
++ * cable. Scoped to soc_is_px30s() only, since rk3328_phy_cfgs is shared
++ * with other boards this hasn't been tested on.
 + */
 +static int rk3328_usb2phy_tuning(struct rockchip_usb2phy *rphy)
 +{
@@ -73,7 +70,7 @@
  static const struct rockchip_usb2phy_cfg rk3328_phy_cfgs[] = {
  	{
  		.reg = 0x100,
-@@ -1751,6 +1810,7 @@
+@@ -1751,6 +1807,7 @@
  			.vdm_src_en	= { 0x0108, 12, 12, 0, 1 },
  			.vdp_src_en	= { 0x0108, 11, 11, 0, 1 },
  		},

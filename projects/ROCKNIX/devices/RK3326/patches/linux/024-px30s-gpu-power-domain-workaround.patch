@@ -1,0 +1,30 @@
+--- a/drivers/pmdomain/rockchip/pm-domains.c
++++ b/drivers/pmdomain/rockchip/pm-domains.c
+@@ -35,6 +35,7 @@
+ #include <dt-bindings/power/rk3568-power.h>
+ #include <dt-bindings/power/rockchip,rk3576-power.h>
+ #include <dt-bindings/power/rk3588-power.h>
++#include <linux/rockchip/cpu.h>
+ 
+ struct rockchip_domain_info {
+ 	const char *name;
+@@ -574,6 +575,19 @@
+ 	struct rockchip_pmu *pmu = pd->pmu;
+ 	int ret;
+ 
++	/*
++	 * Ported from vendor commit 41f9bdf3cf40 ("keep pd_gpu always on for
++	 * px30s"), corrected per follow-up fix 480163a87a56: the vendor's
++	 * check compared against genpd name "pd_gpu", but this driver's
++	 * actual name is just "gpu", so it never matched. Powering the GPU
++	 * domain off via genpd on PX30S is erratic and can corrupt the GPU
++	 * clock's enable refcount ("Enabling unprepared clk_gpu" / -ESHUTDOWN
++	 * on a later resume), so just never power it off.
++	 */
++	if (!power_on && soc_is_px30s() &&
++	    pd->genpd.name && !strcmp(pd->genpd.name, "gpu"))
++		return 0;
++
+ 	mutex_lock(&pmu->mutex);
+ 
+ 	if (rockchip_pmu_domain_is_on(pd) != power_on) {
