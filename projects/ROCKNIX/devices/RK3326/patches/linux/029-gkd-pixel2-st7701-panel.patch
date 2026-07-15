@@ -1,0 +1,211 @@
+Subject: [PATCH] drm/panel: st7701: add GKD Pixel 2 panel support
+
+Authored by r3claimer. Not ported from rockchip-linux/kernel -
+contributed directly while working the GKD Pixel 2 black-screen issue,
+not sourced from a public upstream commit. Identifies the panel's real
+IC family (genuine Sitronix ST7701, mislabeled "sitronix,st7703" in
+the vendor tree) and fixes the actual root cause of the black-screen
+bug: the board's DSI reset-gpios polarity was wrong (active-low
+instead of active-high), so the panel was being told to exit reset
+every boot and instead held in it the whole time.
+
+---
+--- a/drivers/gpu/drm/panel/panel-sitronix-st7701.c
++++ b/drivers/gpu/drm/panel/panel-sitronix-st7701.c
+@@ -137,6 +137,7 @@
+ 
+ 	struct regulator_bulk_data supplies[2];
+ 	struct gpio_desc *reset;
++	struct gpio_desc *enable_gpio;
+ 	unsigned int sleep_delay;
+ 	enum drm_panel_orientation orientation;
+ 
+@@ -520,6 +521,84 @@
+ 	st7701_switch_cmd_bkx(st7701, false, 0);
+ }
+ 
++/*
++ * GIP init sequence for the GameKiddy GKD Pixel 2. Unlike the other panels
++ * in this file, this is NOT derived from the ST7701 datasheet formulas
++ * (pv_gamma/nv_gamma/vop_uv/...) - it's a byte-for-byte transcription of
++ * the raw vendor (Rockchip PX30 BSP) panel-init blob, cross-checked
++ * register-by-register against the public ST7701 BK0/BK1 command tables,
++ * confirming this is a genuine ST7701-family part mislabeled
++ * "sitronix,st7703" in the vendor tree.
++ *
++ * st7701_prepare() unconditionally runs the generic, formula-driven
++ * st7701_init_sequence() first; its dummy pv_gamma/nv_gamma/vop_uv writes
++ * are harmlessly overwritten a few instructions later when this function
++ * re-selects the same banks and writes the exact vendor bytes below.
++ */
++static void gkdpixel2_gip_sequence(struct st7701 *st7701)
++{
++	st7701_switch_cmd_bkx(st7701, true, 3);
++	ST7701_WRITE(st7701, 0xEF, 0x08);
++
++	st7701_switch_cmd_bkx(st7701, true, 0);
++	ST7701_WRITE(st7701, 0xC0, 0x4F, 0x00);
++	ST7701_WRITE(st7701, 0xC1, 0x10, 0x0C);
++	ST7701_WRITE(st7701, 0xC2, 0x01, 0x14);
++	ST7701_WRITE(st7701, 0xCC, 0x10);
++	ST7701_WRITE(st7701, 0xB0, 0x00, 0x0B, 0x13, 0x0D, 0x10, 0x07, 0x02,
++		   0x08, 0x07, 0x1F, 0x04, 0x11, 0x0F, 0x28, 0x2F, 0x1F);
++	ST7701_WRITE(st7701, 0xB1, 0x00, 0x0C, 0x13, 0x0C, 0x10, 0x05, 0x02,
++		   0x08, 0x08, 0x1E, 0x05, 0x13, 0x11, 0x27, 0x30, 0x1F);
++
++	st7701_switch_cmd_bkx(st7701, true, 1);
++	ST7701_WRITE(st7701, 0xB0, 0x4D);
++	ST7701_WRITE(st7701, 0xB1, 0x4D);
++	ST7701_WRITE(st7701, 0xB2, 0x87);
++	ST7701_WRITE(st7701, 0xB3, 0x80);
++	ST7701_WRITE(st7701, 0xB5, 0x45);
++	ST7701_WRITE(st7701, 0xB7, 0x85);
++	ST7701_WRITE(st7701, 0xB8, 0x20);
++	ST7701_WRITE(st7701, 0xC0, 0x09);
++	ST7701_WRITE(st7701, 0xC1, 0x78);
++	ST7701_WRITE(st7701, 0xC2, 0x78);
++	ST7701_WRITE(st7701, 0xD0, 0x88);
++	msleep(100);
++
++	/* GIP timing table - still on BK1, no bank switch between D0 and E0-EF */
++	ST7701_WRITE(st7701, 0xE0, 0x00, 0x00, 0x02);
++	ST7701_WRITE(st7701, 0xE1, 0x04, 0xB0, 0x06, 0xB0, 0x05, 0xB0, 0x07,
++		   0xB0, 0x00, 0x44, 0x44);
++	ST7701_WRITE(st7701, 0xE2, 0x20, 0x20, 0x44, 0x44, 0x96, 0xA0, 0x00,
++		   0x00, 0x96, 0xA0, 0x00, 0x00);
++	ST7701_WRITE(st7701, 0xE3, 0x00, 0x00, 0x22, 0x22);
++	ST7701_WRITE(st7701, 0xE4, 0x44, 0x44);
++	ST7701_WRITE(st7701, 0xE5, 0x0C, 0x90, 0xB0, 0xA0, 0x0E, 0x92, 0xB0,
++		   0xA0, 0x08, 0x8C, 0xB0, 0xA0, 0x0A, 0x8E, 0xB0, 0xA0);
++	ST7701_WRITE(st7701, 0xE6, 0x00, 0x00, 0x22, 0x22);
++	ST7701_WRITE(st7701, 0xE7, 0x44, 0x44);
++	ST7701_WRITE(st7701, 0xE8, 0x0D, 0x91, 0xB0, 0xA0, 0x0F, 0x93, 0xB0,
++		   0xA0, 0x09, 0x8D, 0xB0, 0xA0, 0x0B, 0x8F, 0xB0, 0xA0);
++	ST7701_WRITE(st7701, 0xE9, 0x36, 0x00);
++	ST7701_WRITE(st7701, 0xEB, 0x00, 0x00, 0xE4, 0xE4, 0x44, 0x88, 0x40);
++	ST7701_WRITE(st7701, 0xED, 0xC1, 0xA2, 0xBF, 0x0F, 0x67, 0x45, 0xFF,
++		   0xFF, 0xFF, 0xFF, 0x54, 0x76, 0xF0, 0xFB, 0x2A, 0x1C);
++	ST7701_WRITE(st7701, 0xEF, 0x10, 0x0D, 0x04, 0x08, 0x3F, 0x1F);
++
++	st7701_switch_cmd_bkx(st7701, true, 3);
++	ST7701_WRITE(st7701, 0xE8, 0x00, 0x0E);
++
++	st7701_switch_cmd_bkx(st7701, false, 0);
++	ST7701_WRITE(st7701, MIPI_DCS_EXIT_SLEEP_MODE, 0x00);
++	msleep(120);
++
++	st7701_switch_cmd_bkx(st7701, true, 3);
++	ST7701_WRITE(st7701, 0xE8, 0x00, 0x0C);
++	msleep(10);
++	ST7701_WRITE(st7701, 0xE8, 0x00, 0x00);
++
++	st7701_switch_cmd_bkx(st7701, false, 0);
++}
++
+ static int st7701_prepare(struct drm_panel *panel)
+ {
+ 	struct st7701 *st7701 = panel_to_st7701(panel);
+@@ -533,6 +612,11 @@
+ 		return ret;
+ 	msleep(20);
+ 
++	/* Optional enable GPIO for clones with a separate panel/level-shifter
++	 * power line, distinct from reset; NULL (no-op) otherwise. */
++	gpiod_set_value(st7701->enable_gpio, 1);
++	msleep(20);
++
+ 	gpiod_set_value(st7701->reset, 1);
+ 	msleep(150);
+ 
+@@ -574,6 +658,7 @@
+ 	msleep(st7701->sleep_delay);
+ 
+ 	gpiod_set_value(st7701->reset, 0);
++	gpiod_set_value(st7701->enable_gpio, 0);
+ 
+ 	/**
+ 	 * During the Resetting period, the display will be blanked
+@@ -1135,6 +1220,58 @@
+ 	.gip_sequence = rg28xx_gip_sequence,
+ };
+ 
++/*
++ * Not real gamma/voltage values - st7701_prepare() always runs the generic
++ * formula path first, whose writes get overwritten by
++ * gkdpixel2_gip_sequence()'s actual vendor bytes right after.
++ */
++static const struct drm_display_mode gkdpixel2_mode = {
++	.clock		= 25000,
++
++	.hdisplay	= 480,
++	.hsync_start	= 480 + 40,
++	.hsync_end	= 480 + 40 + 10,
++	.htotal		= 480 + 40 + 10 + 40,
++
++	.vdisplay	= 640,
++	.vsync_start	= 640 + 40,
++	.vsync_end	= 640 + 40 + 10,
++	.vtotal		= 640 + 40 + 10 + 40,
++
++	.width_mm	= 68,
++	.height_mm	= 121,
++
++	.flags		= DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC,
++
++	.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
++};
++
++static const struct st7701_panel_desc gkdpixel2_desc = {
++	.mode = &gkdpixel2_mode,
++	.lanes = 2,
++	.format = MIPI_DSI_FMT_RGB888,
++	.panel_sleep_delay = 0,
++
++	/* Placeholder only - see comment above gkdpixel2_mode. */
++	.pv_gamma = { 0 },
++	.nv_gamma = { 0 },
++	.nlinv = 0,
++	.vop_uv = 4400000,
++	.vcom_uv = 337500,
++	.vgh_mv = 15000,
++	.vgl_mv = -9510,
++	.avdd_mv = 6600,
++	.avcl_mv = -4400,
++	.gamma_op_bias = OP_BIAS_MIN,
++	.input_op_bias = OP_BIAS_MIN,
++	.output_op_bias = OP_BIAS_MIN,
++	.t2d_ns = 1600,
++	.t3d_ns = 10400,
++	.eot_en = true,
++
++	.gip_sequence = gkdpixel2_gip_sequence,
++};
++
+ static void st7701_cleanup(void *data)
+ {
+ 	struct st7701 *st7701 = (struct st7701 *)data;
+@@ -1172,6 +1309,16 @@
+ 		return PTR_ERR(st7701->reset);
+ 	}
+ 
++	/*
++	 * Optional panel enable GPIO. Most ST7701 panels do not have this,
++	 * but some clones route a separate enable pin to the panel power
++	 * switch or DSI level shifter.
++	 */
++	st7701->enable_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
++	if (IS_ERR(st7701->enable_gpio))
++		return dev_err_probe(dev, PTR_ERR(st7701->enable_gpio),
++				     "Failed to get enable gpio\n");
++
+ 	ret = of_drm_get_panel_orientation(dev->of_node, &st7701->orientation);
+ 	if (ret < 0)
+ 		return dev_err_probe(dev, ret, "Failed to get orientation\n");
+@@ -1264,6 +1411,7 @@
+ 	{ .compatible = "anbernic,rg-arc-panel", .data = &rg_arc_desc },
+ 	{ .compatible = "densitron,dmt028vghmcmi-1a", .data = &dmt028vghmcmi_1a_desc },
+ 	{ .compatible = "elida,kd50t048a", .data = &kd50t048a_desc },
++	{ .compatible = "gkd,pixel2-panel", .data = &gkdpixel2_desc },
+ 	{ .compatible = "techstar,ts8550b", .data = &ts8550b_desc },
+ 	{ }
+ };

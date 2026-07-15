@@ -36,6 +36,21 @@ else
   log "Subdevice fallback: $SUBDEVICE"
 fi
 
+# GKD Pixel2 (PX30S silicon) is folded into subdevice "b" - its u-boot/
+# boot.scr are identical to every other "b" board, only the DTB
+# (already selected by b_boot.ini's own register check) differs. Purely
+# for update-log clarity, confirm the SoC variant the same way
+# b_boot.ini does: PX30S and plain PX30 share the same base ID but
+# differ in the DDR_GRF_CON1 register (bits 15:14 read 0b11 only on
+# PX30S) - see rockchip_cpuinfo's px30_init() in
+# 026-px30s-cpuinfo-soc-detection.patch. This doesn't change SUBDEVICE
+# itself, since PX30S boards already correctly fall through to "b"
+# above, same as any other unlisted-by-name "b" board would.
+PX30_GRF_CON1=$(devmem 0xff630004 32 2>/dev/null)
+if [ -n "${PX30_GRF_CON1}" ] && [ $(( PX30_GRF_CON1 & 0xc000 )) -eq $(( 0xc000 )) ]; then
+  log "PX30S silicon detected (likely GKD Pixel2)"
+fi
+
 log "Updating device trees..."
 if [ -d "$BOOT_ROOT/device_trees" ]; then
   mv $BOOT_ROOT/device_trees/*.dtb $BOOT_ROOT

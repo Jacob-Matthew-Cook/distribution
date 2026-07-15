@@ -1,0 +1,295 @@
+From: ROCKNIX <https://github.com/ROCKNIX>
+Subject: [PATCH] rockchip: rockchip-otp: add PX30S OTP read protocol
+
+Mainline U-Boot's drivers/misc/rockchip-otp.c has no PX30S support at
+all - it matches "rockchip,px30-otp" to the plain PX30 SBPI/user-mode
+read path unconditionally, same gap mainline Linux had before this
+project's own 032-px30s-otp-read-protocol.patch fixed it there. This is
+almost certainly why 0002-dont-fail-boot-on-otp-efuse-cpuid-read-failure
+exists: rockchip_cpuid_from_efuse() genuinely fails/times out on real
+PX30S hardware because of this, and that patch papers over the symptom
+(don't hard-fail boot) rather than fixing the read itself. That patch is
+left in place as a safety net; it should simply never trigger once OTP
+reads actually succeed.
+
+U-Boot also has no soc_is_px30s()-equivalent SoC-variant detection at
+all. arch/arm/mach-rockchip/px30/px30.c's checkboard() already reads
+DDR_GRF_CON1 bit[15:14] to print "PX30S" vs "PX30" in the boot banner
+(citing the same vendor source - drivers/soc/rockchip/rockchip-
+cpuinfo.c - this project's own Linux-side port also cites), but that
+check happens inline, after two OTP reads that assume the OTP driver
+already works - a circular dependency if reused here, since the OTP
+driver needs to know PX30 vs PX30S *before* it can read OTP at all. This
+adds a new arch/arm/include/asm/arch-rockchip/cpu_px30.h exposing the
+same DDR_GRF_CON1 check standalone, mirroring the existing
+cpu_rk3288.h's soc_is_##id() pattern for RK3288/RK3288W, with no OTP
+dependency.
+
+Ported the active/standby read protocol itself from the vendor BSP
+kernel's Linux driver (rockchip-linux/kernel, drivers/nvmem/
+rockchip-otp.c) rather than a vendor U-Boot source - this driver's
+mainline U-Boot structure (no clk or reset handling at all) is closer to
+mainline Linux's than to the vendor kernel's, so neither is added here
+either.
+
+Also adds a `data` field to struct rockchip_otp_plat, set once in
+rockchip_otp_probe() (where the soc_is_px30s() override happens) and
+read back in rockchip_otp_read() - previously that function independently
+re-derived driver data via dev_get_driver_data(dev) on every read, which
+has no way to reflect a probe-time override.
+
+---
+--- /dev/null
++++ b/arch/arm/include/asm/arch-rockchip/cpu_px30.h
+@@ -0,0 +1,56 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Rockchip Electronics Co., Ltd.
++ *
++ * PX30 vs PX30S detection, mirroring cpu_rk3288.h's soc_is_##id() pattern.
++ *
++ * arch/arm/mach-rockchip/px30/px30.c's checkboard() already does this same
++ * DDR_GRF_CON1 bit[15:14] read (citing the same vendor source this does:
++ * drivers/soc/rockchip/rockchip-cpuinfo.c) - but only for the boot banner,
++ * and only after two OTP reads that assume the OTP driver already works.
++ * drivers/misc/rockchip-otp.c needs to know PX30 vs PX30S *before* it can
++ * read OTP at all (PX30S uses a different read protocol), so this exposes
++ * the same register check standalone, with no OTP dependency.
++ */
++
++#ifndef __ASM_ARCH_CPU_PX30_H
++#define __ASM_ARCH_CPU_PX30_H
++
++#include <asm/io.h>
++
++#define ROCKCHIP_CPU_MASK	0xffff0000
++#define ROCKCHIP_CPU_PX30	0x33260000
++
++#define ROCKCHIP_SOC_MASK	(ROCKCHIP_CPU_MASK | 0xff)
++#define ROCKCHIP_SOC_PX30	(ROCKCHIP_CPU_PX30 | 0x00)
++#define ROCKCHIP_SOC_PX30S	(ROCKCHIP_CPU_PX30 | 0x01)
++
++#define PX30_DDR_GRF_BASE	0xff630000
++#define PX30_DDR_GRF_CON1	0x04
++
++static inline int rockchip_soc_id(void)
++{
++#if defined(CONFIG_ROCKCHIP_PX30)
++	u32 val = readl(PX30_DDR_GRF_BASE + PX30_DDR_GRF_CON1);
++
++	if (((val >> 14) & 0x3) == 0x3)
++		return ROCKCHIP_SOC_PX30S;
++	return ROCKCHIP_SOC_PX30;
++#else
++	return 0;
++#endif
++}
++
++#define ROCKCHIP_SOC(id, ID) \
++static inline bool soc_is_##id(void) \
++{ \
++	int soc_id = rockchip_soc_id(); \
++	if (soc_id) \
++		return ((soc_id & ROCKCHIP_SOC_MASK) == ROCKCHIP_SOC_ ##ID); \
++	return false; \
++}
++
++ROCKCHIP_SOC(px30, PX30)
++ROCKCHIP_SOC(px30s, PX30S)
++
++#endif /* __ASM_ARCH_CPU_PX30_H */
+--- a/drivers/misc/rockchip-otp.c
++++ b/drivers/misc/rockchip-otp.c
+@@ -12,6 +12,7 @@
+ #include <linux/iopoll.h>
+ #include <malloc.h>
+ #include <misc.h>
++#include <asm/arch-rockchip/cpu_px30.h>
+
+ /* OTP Register Offsets */
+ #define OTPC_SBPI_CTRL			0x0020
+@@ -27,6 +28,26 @@
+ #define OTPC_SBPI_CMD0_OFFSET		0x1000
+ #define OTPC_SBPI_CMD1_OFFSET		0x1004
+
++/* PX30S-only registers - see rockchip_px30s_otp_read() below */
++#define OTPC_MODE_CTRL			0x2000
++#define OTPC_IRQ_ST			0x2008
++#define OTPC_ACCESS_ADDR		0x200c
++#define OTPC_RD_DATA			0x2010
++#define OTPC_REPR_RD_TRANS_NUM		0x2020
++
++#define OTPC_DEEP_STANDBY		0x0
++#define OTPC_STANDBY			0x1
++#define OTPC_ACTIVE			0x2
++#define OTPC_READ_ACCESS		0x3
++#define OTPC_TRANS_NUM			0x1
++#define OTPC_RDM_IRQ_ST			BIT(0)
++#define OTPC_STB2ACT_IRQ_ST		BIT(7)
++#define OTPC_DP2STB_IRQ_ST		BIT(8)
++#define OTPC_ACT2STB_IRQ_ST		BIT(9)
++#define OTPC_STB2DP_IRQ_ST		BIT(10)
++#define PX30S_NBYTES			4
++#define PX30S_NO_SECURE_OFFSET		224
++
+ /* OTP Register bits and masks */
+ #define OTPC_USER_ADDR_MASK		GENMASK(31, 16)
+ #define OTPC_USE_USER			BIT(0)
+@@ -70,6 +91,7 @@
+
+ struct rockchip_otp_plat {
+ 	void __iomem *base;
++	const struct rockchip_otp_data *data;
+ };
+
+ struct rockchip_otp_data {
+@@ -183,6 +205,97 @@
+ 	return ret;
+ }
+
++/*
++ * PX30S uses a different OTPC read protocol than plain PX30: reads have to
++ * walk the controller through an active/standby power-state machine
++ * (deep-standby -> standby -> active before reading, then back down
++ * afterwards) instead of the SBPI/user-mode dance rockchip_px30_otp_read()
++ * above uses. Ported from the vendor BSP kernel's Linux driver
++ * (rockchip-linux/kernel, drivers/nvmem/rockchip-otp.c) rather than a
++ * vendor U-Boot source, since this driver's mainline U-Boot structure is
++ * closer to mainline Linux's than to the vendor kernel's - no clk or reset
++ * handling exists in this file at all, so neither is added here either.
++ */
++static int rockchip_px30s_otp_active(struct rockchip_otp_plat *otp)
++{
++	u32 mode = readl(otp->base + OTPC_MODE_CTRL);
++	int ret = 0;
++
++	switch (mode) {
++	case OTPC_DEEP_STANDBY:
++		writel(OTPC_STANDBY, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_poll_timeout(otp, OTPC_DP2STB_IRQ_ST,
++						OTPC_IRQ_ST);
++		if (ret)
++			return ret;
++		fallthrough;
++	case OTPC_STANDBY:
++		writel(OTPC_ACTIVE, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_poll_timeout(otp, OTPC_STB2ACT_IRQ_ST,
++						OTPC_IRQ_ST);
++		break;
++	default:
++		break;
++	}
++
++	return ret;
++}
++
++static int rockchip_px30s_otp_standby(struct rockchip_otp_plat *otp)
++{
++	u32 mode = readl(otp->base + OTPC_MODE_CTRL);
++	int ret = 0;
++
++	switch (mode) {
++	case OTPC_ACTIVE:
++		writel(OTPC_STANDBY, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_poll_timeout(otp, OTPC_ACT2STB_IRQ_ST,
++						OTPC_IRQ_ST);
++		if (ret)
++			return ret;
++		fallthrough;
++	case OTPC_STANDBY:
++		writel(OTPC_DEEP_STANDBY, otp->base + OTPC_MODE_CTRL);
++		ret = rockchip_otp_poll_timeout(otp, OTPC_STB2DP_IRQ_ST,
++						OTPC_IRQ_ST);
++		break;
++	default:
++		break;
++	}
++
++	return ret;
++}
++
++static int rockchip_px30s_otp_read(struct udevice *dev, int offset,
++				   void *buf, int size)
++{
++	struct rockchip_otp_plat *otp = dev_get_plat(dev);
++	u32 *buffer = buf;
++	int ret;
++
++	ret = rockchip_px30s_otp_active(otp);
++	if (ret)
++		return ret;
++
++	offset += PX30S_NO_SECURE_OFFSET;
++	while (size--) {
++		writel(OTPC_TRANS_NUM, otp->base + OTPC_REPR_RD_TRANS_NUM);
++		writel(offset++, otp->base + OTPC_ACCESS_ADDR);
++		writel(OTPC_READ_ACCESS, otp->base + OTPC_MODE_CTRL);
++
++		ret = rockchip_otp_poll_timeout(otp, OTPC_RDM_IRQ_ST,
++						OTPC_IRQ_ST);
++		if (ret)
++			break;
++
++		*buffer++ = readl(otp->base + OTPC_RD_DATA);
++	}
++
++	rockchip_px30s_otp_standby(otp);
++
++	return ret;
++}
++
+ static int rockchip_rk3568_otp_read(struct udevice *dev, int offset,
+ 				    void *buf, int size)
+ {
+@@ -285,8 +398,8 @@
+ static int rockchip_otp_read(struct udevice *dev, int offset,
+ 			     void *buf, int size)
+ {
+-	const struct rockchip_otp_data *data =
+-		(void *)dev_get_driver_data(dev);
++	struct rockchip_otp_plat *plat = dev_get_plat(dev);
++	const struct rockchip_otp_data *data = plat->data;
+ 	u32 block_start, block_end, block_offset, blocks;
+ 	u8 *buffer;
+ 	int ret;
+@@ -336,14 +449,27 @@
+ 	return 0;
+ }
+
++static const struct rockchip_otp_data px30s_data;
++
+ static int rockchip_otp_probe(struct udevice *dev)
+ {
++	struct rockchip_otp_plat *plat = dev_get_plat(dev);
+ 	struct rockchip_otp_data *data;
+
+ 	data = (struct rockchip_otp_data *)dev_get_driver_data(dev);
+ 	if (!data)
+ 		return -EINVAL;
+
++	/*
++	 * This board's devicetree still uses the plain "rockchip,px30-otp"
++	 * compatible - see cpu_px30.h's comment on why the runtime check
++	 * happens here instead of a distinct compatible string.
++	 */
++	if (soc_is_px30s())
++		data = (struct rockchip_otp_data *)&px30s_data;
++
++	plat->data = data;
++
+ 	if (data->init)
+ 		return data->init(dev);
+
+@@ -355,6 +481,12 @@
+ 	.size = 0x40,
+ };
+
++static const struct rockchip_otp_data px30s_data = {
++	.read = rockchip_px30s_otp_read,
++	.size = 0x80,
++	.block_size = 4,
++};
++
+ static const struct rockchip_otp_data rk3568_data = {
+ 	.read = rockchip_rk3568_otp_read,
+ 	.size = 0x80,

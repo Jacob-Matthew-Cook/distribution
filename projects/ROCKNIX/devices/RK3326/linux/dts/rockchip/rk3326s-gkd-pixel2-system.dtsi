@@ -1,0 +1,288 @@
+/dts-v1/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+    compatible = "rockchip,rk3326-evb", "rockchip,rk3326";
+    #address-cells = <2>;
+    #size-cells = <2>;
+    model = "Rockchip RK3326S Pixel2";
+    aliases {
+        serial2 = "/serial@ff160000";
+        mmc0 = "/dwmmc@ff390000";
+        mmc1 = "/dwmmc@ff370000";
+    };
+    dmc {
+        compatible = "rockchip,px30-dmc", "syscon";
+        reg = <0x0 0xff2a0000 0 0x1000>;
+        u-boot,dm-pre-reloc;
+    };
+    syscon@ff010000 {
+        compatible = "rockchip,px30-pmugrf", "syscon", "simple-mfd";
+        reg = <0x0 0xff010000 0 0x1000>;
+        #address-cells = <1>;
+        #size-cells = <1>;
+        u-boot,dm-spl;
+    };
+    crypto@ff0b0000 {
+        compatible = "rockchip,px30-crypto";
+        reg = <0x0 0xff0b0000 0 0x4000>;
+        clock-names = "sclk_crypto", "apkclk_crypto";
+        clocks = <&clock-controller@ff2b0000 48>, <&clock-controller@ff2b0000 49>;
+        clock-frequency = <200000000 300000000>;
+        status = "okay";
+        u-boot,dm-spl;
+    };
+    serial@ff160000 {
+        compatible = "rockchip,px30-uart", "snps,dw-apb-uart";
+        reg = <0x0 0xff160000 0 0x100>;
+        interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+        clocks = <&clock-controller@ff2b0000 25>, <&clock-controller@ff2b0000 330>;
+        clock-names = "baudclk", "apb_pclk";
+        reg-shift = <2>;
+        reg-io-width = <4>;
+        dmas = <0x10000009>, <0x4>, <0x10000009>, <0x5>;
+        #dma-cells = <2>;
+        status = "okay";
+        clock-frequency = <24000000>;
+        u-boot,dm-pre-reloc;
+    };
+    serial@ff178000 {
+        compatible = "rockchip,px30-uart", "snps,dw-apb-uart";
+        reg = <0x0 0xff178000 0 0x100>;
+        interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>;
+        clocks = <&clock-controller@ff2b0000 28>, <&clock-controller@ff2b0000 333>;
+        clock-names = "baudclk", "apb_pclk";
+        reg-shift = <2>;
+        reg-io-width = <4>;
+        dmas = <0x10000009>, <0xa>, <0x10000009>, <0xb>;
+        #dma-cells = <2>;
+        status = "disabled";
+        clock-frequency = <24000000>;
+        u-boot,dm-pre-reloc;
+    };
+    spi@ff1d0000 {
+        compatible = "rockchip,px30-spi", "rockchip,rk3066-spi";
+        reg = <0x0 0xff1d0000 0 0x1000>;
+        interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        clocks = <&clock-controller@ff2b0000 36>, <&clock-controller@ff2b0000 341>;
+        clock-names = "spiclk", "apb_pclk";
+        dmas = <0x10000009>, <0xc>, <0x10000009>, <0xd>;
+        #dma-cells = <2>;
+        dma-names = "tx", "rx";
+        status = "disabled";
+        u-boot,dm-pre-reloc;
+    };
+    saradc@ff288000 {
+        compatible = "rockchip,px30-saradc", "rockchip,rk3399-saradc";
+        reg = <0x0 0xff288000 0 0x100>;
+        interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;
+        #io-channel-cells = <1>;
+        clocks = <&clock-controller@ff2b0000 45>, <&clock-controller@ff2b0000 343>;
+        clock-names = "saradc", "apb_pclk";
+        resets = <&clock-controller@ff2b0000 165>;
+        reset-names = "saradc-apb";
+        status = "okay";
+        u-boot,dm-spl;
+    };
+    clock-controller@ff2b0000 {
+        compatible = "rockchip,px30-cru";
+        reg = <0x0 0xff2b0000 0 0x9000>;
+        rockchip,grf = <0x10000039>;
+        #clock-cells = <1>;
+        #reset-cells = <1>;
+        u-boot,dm-spl;
+    };
+    pmu-clock-controller@ff2bc000 {
+        compatible = "rockchip,px30-pmucru";
+        reg = <0x0 0xff2bc000 0 0x1000>;
+        rockchip,grf = <0x10000039>;
+        #clock-cells = <1>;
+        #reset-cells = <1>;
+        u-boot,dm-spl;
+    };
+    syscon@ff2c0000 {
+        compatible = "rockchip,px30-usb2phy-grf", "syscon", "simple-mfd";
+        reg = <0x0 0xff2c0000 0 0x10000>;
+        #address-cells = <1>;
+        #size-cells = <1>;
+        u-boot,dm-pre-reloc;
+        status = "okay";
+        usb2-phy@100 {
+            compatible = "rockchip,px30-usb2phy", "rockchip,rk3328-usb2phy";
+            reg = <0x100 0x10>;
+            clocks = <&pmu-clock-controller@ff2bc000 10>;
+            clock-names = "phyclk";
+            #clock-cells = <0>;
+            clock-output-names = "usb480m_phy";
+            status = "okay";
+            u-boot,dm-pre-reloc;
+            otg-port {
+                #phy-cells = <0>;
+                interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 65 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
+                interrupt-names = "otg-bvalid", "otg-id", "linestate";
+                status = "okay";
+                u-boot,dm-pre-reloc;
+            };
+        };
+    };
+    usb@ff300000 {
+        compatible = "rockchip,px30-usb", "rockchip,rk3066-usb", "snps,dwc2";
+        reg = <0x0 0xff300000 0 0x40000>;
+        interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
+        clocks = <&clock-controller@ff2b0000 258>;
+        clock-names = "otg";
+        dr_mode = "otg";
+        g-np-tx-fifo-size = <16>;
+        g-rx-fifo-size = <275>;
+        g-tx-fifo-size = <256 128 128 64 64 32>;
+        g-use-dma;
+        phys = <&syscon@ff2c0000/usb2-phy@100/otg-port>;
+        phy-names = "usb2-phy";
+        status = "disabled";
+        u-boot,dm-pre-reloc;
+    };
+    dwmmc@ff370000 {
+        compatible = "rockchip,px30-dw-mshc", "rockchip,rk3288-dw-mshc";
+        reg = <0x0 0xff370000 0 0x4000>;
+        max-frequency = <150000000>;
+        clocks = <&clock-controller@ff2b0000 247>, <&clock-controller@ff2b0000 59>, <&clock-controller@ff2b0000 67>, <&clock-controller@ff2b0000 68>;
+        clock-names = "biu", "ciu", "ciu-drv", "ciu-sample";
+        fifo-depth = <256>;
+        cd-gpios = <&pinctrl/gpio0@ff040000 RK_PA3 GPIO_ACTIVE_LOW>;
+        interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
+        status = "okay";
+        u-boot,dm-spl;
+        bus-width = <4>;
+        cap-mmc-highspeed;
+        cap-sd-highspeed;
+        supports-sd;
+        card-detect-delay = <1200>;
+        ignore-pm-notify;
+        sd-uhs-sdr12;
+        sd-uhs-sdr25;
+        sd-uhs-sdr50;
+        sd-uhs-sdr104;
+        vqmmc-supply = <ERROR_CANNOT_DEREFERENCE_0x10000046>;
+        vmmc-supply = <ERROR_CANNOT_DEREFERENCE_0x10000047>;
+    };
+    dwmmc@ff390000 {
+        compatible = "rockchip,px30-dw-mshc", "rockchip,rk3288-dw-mshc";
+        reg = <0x0 0xff390000 0 0x4000>;
+        max-frequency = <150000000>;
+        clocks = <&clock-controller@ff2b0000 256>, <&clock-controller@ff2b0000 57>, <&clock-controller@ff2b0000 71>, <&clock-controller@ff2b0000 72>;
+        clock-names = "biu", "ciu", "ciu-drv", "ciu-sample";
+        fifo-depth = <256>;
+        interrupts = <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>;
+        status = "disabled";
+        u-boot,dm-spl;
+    };
+    sfc@ff3a0000 {
+        compatible = "rockchip,rksfc", "rockchip,sfc";
+        reg = <0x0 0xff3a0000 0 0x4000>;
+        interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
+        clocks = <&clock-controller@ff2b0000 58>, <&clock-controller@ff2b0000 257>;
+        clock-names = "clk_sfc", "hclk_sfc";
+        status = "okay";
+        u-boot,dm-spl;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        u-boot,dm-pre-reloc;
+        flash@0 {
+            u-boot,dm-spl;
+            compatible = "spi-nand";
+            reg = <0x0>;
+            spi-tx-bus-width = <1>;
+            spi-rx-bus-width = <4>;
+            spi-max-frequency = <75000000>;
+        };
+        flash@1 {
+            u-boot,dm-spl;
+            compatible = "jedec,spi-nor";
+            label = "sfc_nor";
+            reg = <0x0>;
+            spi-tx-bus-width = <1>;
+            spi-rx-bus-width = <4>;
+            spi-max-frequency = <100000000>;
+        };
+    };
+    nandc@ff3b0000 {
+        compatible = "rockchip,rk-nandc";
+        reg = <0x0 0xff3b0000 0 0x4000>;
+        interrupts = <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>;
+        nandc_id = <0>;
+        clocks = <&clock-controller@ff2b0000 55>, <&clock-controller@ff2b0000 254>;
+        clock-names = "clk_nandc", "hclk_nandc";
+        status = "disabled";
+        u-boot,dm-pre-reloc;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        nand@0 {
+            u-boot,dm-pre-reloc;
+            reg = <0x0>;
+            nand-ecc-mode = "hw_syndrome";
+            nand-ecc-strength = <16>;
+            nand-ecc-step-size = <1024>;
+        };
+    };
+    pinctrl {
+        gpio0@ff040000 {
+            compatible = "rockchip,gpio-bank";
+            reg = <0x0 0xff040000 0 0x100>;
+            interrupts = <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock-controller@ff2b0000 20>;
+            gpio-controller;
+            #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            u-boot,dm-pre-reloc;
+            status = "disabled";
+        };
+        gpio1@ff250000 {
+            compatible = "rockchip,gpio-bank";
+            reg = <0x0 0xff250000 0 0x100>;
+            interrupts = <GIC_SPI 4 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock-controller@ff2b0000 348>;
+            gpio-controller;
+            #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            u-boot,dm-pre-reloc;
+            status = "disabled";
+        };
+        gpio2@ff260000 {
+            compatible = "rockchip,gpio-bank";
+            reg = <0x0 0xff260000 0 0x100>;
+            interrupts = <GIC_SPI 5 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock-controller@ff2b0000 349>;
+            gpio-controller;
+            #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            u-boot,dm-pre-reloc;
+            status = "disabled";
+        };
+        gpio3@ff270000 {
+            compatible = "rockchip,gpio-bank";
+            reg = <0x0 0xff270000 0 0x100>;
+            interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock-controller@ff2b0000 350>;
+            gpio-controller;
+            #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            u-boot,dm-pre-reloc;
+            status = "disabled";
+        };
+    };
+    chosen {
+        u-boot,spl-boot-order = "/dwmmc@ff390000", "/dwmmc@ff370000";
+        stdout-path = "/serial@ff160000";
+    };
+};
+

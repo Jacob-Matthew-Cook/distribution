@@ -1,0 +1,60 @@
+From: ROCKNIX <https://github.com/ROCKNIX>
+Subject: [PATCH] rockchip: boot_mode: disable ADC-based download-key check
+
+rockchip_dnl_key_pressed() treats a near-zero SARADC channel 1 reading
+as "download key held", rebooting straight into BootROM download mode.
+GKD Pixel 2 has no analog stick, so that channel floats near 0V and
+this fires on every boot, looping forever before reaching the kernel.
+All RK3326 subdevices share one U-Boot devicetree with no per-board
+hook to scope this to just the affected board, so disable it
+unconditionally - the BootROM's own physical-key maskrom entry (which
+runs before U-Boot) is unaffected.
+
+---
+ arch/arm/mach-rockchip/boot_mode.c | 34 +---------------------------------
+ 1 file changed, 1 insertion(+), 33 deletions(-)
+
+diff --git a/arch/arm/mach-rockchip/boot_mode.c b/arch/arm/mach-rockchip/boot_mode.c
+index 1111111..2222222 100644
+--- a/arch/arm/mach-rockchip/boot_mode.c
++++ b/arch/arm/mach-rockchip/boot_mode.c
+@@ -39,39 +39,7 @@
+ 
+ __weak int rockchip_dnl_key_pressed(void)
+ {
+-#if CONFIG_IS_ENABLED(ADC)
+-	unsigned int val;
+-	struct udevice *dev;
+-	struct uclass *uc;
+-	int ret;
+-
+-	ret = uclass_get(UCLASS_ADC, &uc);
+-	if (ret)
+-		return false;
+-
+-	ret = -ENODEV;
+-	uclass_foreach_dev(dev, uc) {
+-		if (!strncmp(dev->name, "saradc", 6)) {
+-			ret = adc_channel_single_shot(dev->name, 1, &val);
+-			break;
+-		}
+-	}
+-
+-	if (ret == -ENODEV) {
+-		pr_warn("%s: no saradc device found\n", __func__);
+-		return false;
+-	} else if (ret) {
+-		pr_err("%s: adc_channel_single_shot fail!\n", __func__);
+-		return false;
+-	}
+-
+-	if ((val >= KEY_DOWN_MIN_VAL) && (val <= KEY_DOWN_MAX_VAL))
+-		return true;
+-	else
+-		return false;
+-#else
+ 	return false;
+-#endif
+ }
+ 
+ void rockchip_dnl_mode_check(void)
