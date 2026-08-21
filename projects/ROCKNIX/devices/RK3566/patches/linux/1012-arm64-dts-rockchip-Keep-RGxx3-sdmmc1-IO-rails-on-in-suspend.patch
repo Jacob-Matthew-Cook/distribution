@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jacob Cook <jake@asus-irl-desktop.lawn.gatech.edu>
+Date: Fri, 21 Aug 2026 16:01:35 -0400
+Subject: [PATCH] arm64: dts: rockchip: Keep RGxx3 sdmmc1 IO rails on in
+ suspend
+
+The second SD slot (sdmmc1) on the RGxx3 family keeps its card powered
+across suspend (vmmc is vcc_3v3, always-on and on-in-suspend) while both
+rails that reference its bus are switched off: vcc_1v8 (LDO7, VCCIO4 -
+the IO domain the SDMMC1 pads and their card-detect GPIO2_B2 sit in) and
+vcc1v8_dvp (LDO8, what the node names as vqmmc). Every suspend therefore
+leaves a live card on an unpowered bus and lets the card-detect input
+float; on resume the pads come back up against the card, the latched
+card-detect edge triggers a rescan, and because vmmc can never be cycled
+a card that was upset by the glitch stays unusable until it is physically
+reinserted. Users see the games card vanish after resume, sometimes
+with a corrupted exFAT filesystem. The boot slot is unaffected: its pads
+are in VCCIO3 (vccio_sd) and its card-detect is in the always-on PMU IO
+domain.
+
+Keep both rails at 1.8V through suspend so the bus and card-detect stay
+referenced for as long as the card is powered.
+---
+ arch/arm64/boot/dts/rockchip/rk3566-anbernic-rgxx3.dtsi | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-anbernic-rgxx3.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3566-anbernic-rgxx3.dtsi
+@@ -346,7 +346,8 @@
+ 				regulator-max-microvolt = <1800000>;
+ 				regulator-name = "vcc_1v8";
+ 				regulator-state-mem {
+-					regulator-off-in-suspend;
++					regulator-on-in-suspend;
++					regulator-suspend-microvolt = <1800000>;
+ 				};
+ 			};
+ 
+@@ -356,7 +357,8 @@
+ 				regulator-max-microvolt = <3300000>;
+ 				regulator-name = "vcc1v8_dvp";
+ 				regulator-state-mem {
+-					regulator-off-in-suspend;
++					regulator-on-in-suspend;
++					regulator-suspend-microvolt = <1800000>;
+ 				};
+ 			};
+ 

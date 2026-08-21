@@ -1,0 +1,62 @@
+power: pmic: rk8xx: mark fuel gauge uninitialized on plug-in shutdown
+
+With ROCKCHIP_RK8XX_DISABLE_BOOT_ON_POWERON (set in
+anbernic-rgxx3-rk3566_defconfig), plugging a charger into a powered-off
+device boots U-Boot just far enough for rk8xx_off_for_plugin() to see
+ON_SOURCE = plug-in and shut straight back down, leaving the PMIC
+charging the battery with no OS ever running.
+
+That brief power cycle restarts the RK817 gas gauge with a coulomb
+counter (Q_INIT/Q_PRES) that only the kernel ever seeds - and the
+kernel never ran. On the next real boot, rk817_charger's restore path
+trusts Q_PRES whenever the gauge's off-counter reads under 30 minutes
+(its own comment: "we shouldn't ever encounter an OFF_CNT more than 0
+on a reboot anyway" - an assumption this kernel-less boot violates),
+computing capacity from an unseeded counter: the battery reads 0%
+until the next full charge, and the only recovery is re-initializing
+the gauge by hand or disconnecting the battery.
+
+Set GG_STS bit 4 (BAT_CON, the "battery uninitialized" flag the
+kernel driver checks at probe) before shutting down, so the next boot
+takes the same first-boot path used on a fresh battery insert and
+re-estimates the charge from an OCV voltage lookup instead. The
+learned full-charge capacity is re-guessed from design capacity on
+that path, which is the documented mainline behavior for an
+uninitialized gauge and strictly better than a false empty reading.
+
+Only the plug-in shutdown path is touched - normal boots and normal
+poweroffs keep the gauge state exactly as before.
+
+---
+--- a/include/power/rk8xx_pmic.h
++++ b/include/power/rk8xx_pmic.h
+@@ -212,6 +212,9 @@
+ #define RK817_POWER_EN_SAVE0	0x99
+ #define RK817_POWER_EN_SAVE1	0xa4
+ 
++#define RK817_GAS_GAUGE_GG_STS	0x57
++#define RK817_BAT_CON		BIT(4)
++
+ #define RK806_RST_FUN_MSK	GENMASK(7, 6)
+ 
+ #define RK806_POWER_EN(x)			(0x00 + (x))
+--- a/drivers/power/pmic/rk8xx.c
++++ b/drivers/power/pmic/rk8xx.c
+@@ -79,6 +79,17 @@ void rk8xx_off_for_plugin(struct udevice *dev)
+ 	case RK817_ID:
+ 		if (pmic_reg_read(dev, RK817_ON_SOURCE) & RK8XX_ON_PLUG_IN) {
+ 			printf("Power Off due to plug-in event\n");
++			/* This shutdown leaves the PMIC charging with no OS
++			 * ever having run to seed the gas gauge's coulomb
++			 * counter, which the OS would otherwise trust on the
++			 * next boot and read as an empty battery. Flag the
++			 * gauge uninitialized so the next boot re-estimates
++			 * the charge from the battery voltage instead.
++			 * RK809 shares this code path but has no gas gauge.
++			 */
++			if (priv->variant == RK817_ID)
++				pmic_clrsetbits(dev, RK817_GAS_GAUGE_GG_STS,
++						0, RK817_BAT_CON);
+ 			pmic_clrsetbits(dev, RK817_REG_SYS_CFG3, 0,
+ 					BIT(0));
+ 		}
