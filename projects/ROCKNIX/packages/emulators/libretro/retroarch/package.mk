@@ -23,6 +23,8 @@ case ${ARCH} in
     ;;
 esac
 
+[ "${BATTERYPLUS_SUPPORT}" = "yes" ] && PKG_PATCH_DIRS+=" batteryplus"
+
 PKG_PATCH_DIRS+=" ${DEVICE}"
 
 PKG_CONFIGURE_OPTS_TARGET="   --disable-qt \
