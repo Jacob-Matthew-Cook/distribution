@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+
+. /etc/profile
+
+### Turn the power LED off for the duration of sleep. The generic post hook
+### restores it from led.color, so "poweroff" (no setting change) is right here.
+/usr/bin/ledcontrol poweroff
