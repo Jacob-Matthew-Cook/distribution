@@ -1,0 +1,51 @@
+From: Jacob Cook <jacobmcook1984@gmail.com>
+Subject: [PATCH] Input: axp20x-pek - clear pending PEK interrupts on resume for AXP717
+
+When the power key is the wakeup source, the PEK edge interrupts that
+woke the system are still pending in the AXP717 when the IRQ thread runs
+after resume, so the press that woke the device is delivered to userspace
+and logind suspends the device straight back to sleep.
+
+The driver already handles this for the AXP288 by clearing the pending
+POKN bit from the noirq resume callback. Do the same for the AXP717: its
+PEK rising/falling edge, long and short press interrupts all live in the
+low nibble of IRQ1_STATE, which is write-1-to-clear.
+
+Seen on the Anbernic RG35XX H (H700 + AXP717): every power-key wake from
+s2idle was followed by "Power key pressed short" / "Suspending..." from
+systemd-logind within the same second.
+
+---
+--- a/drivers/input/misc/axp20x-pek.c
++++ b/drivers/input/misc/axp20x-pek.c
+@@ -365,16 +365,24 @@
+ {
+ 	struct axp20x_pek *axp20x_pek = dev_get_drvdata(dev);
+ 
+-	if (axp20x_pek->axp20x->variant != AXP288_ID)
+-		return 0;
+-
+ 	/*
+ 	 * Clear interrupts from button presses during suspend, to avoid
+ 	 * a wakeup power-button press getting reported to userspace.
+ 	 */
+-	regmap_write(axp20x_pek->axp20x->regmap,
+-		     AXP20X_IRQ1_STATE + AXP288_IRQ_POKN / 8,
+-		     BIT(AXP288_IRQ_POKN % 8));
++	switch (axp20x_pek->axp20x->variant) {
++	case AXP288_ID:
++		regmap_write(axp20x_pek->axp20x->regmap,
++			     AXP20X_IRQ1_STATE + AXP288_IRQ_POKN / 8,
++			     BIT(AXP288_IRQ_POKN % 8));
++		break;
++	case AXP717_ID:
++		/* PEK rising/falling edge, long and short press live in IRQ1 */
++		regmap_write(axp20x_pek->axp20x->regmap, AXP717_IRQ1_STATE,
++			     GENMASK(3, 0));
++		break;
++	default:
++		break;
++	}
+ 
+ 	return 0;
+ }
