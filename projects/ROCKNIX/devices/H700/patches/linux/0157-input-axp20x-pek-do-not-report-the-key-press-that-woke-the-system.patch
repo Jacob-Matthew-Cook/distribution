@@ -12,7 +12,7 @@ regmap-irq thread runs as soon as the PMIC interrupt fires, consumes the
 status bits and calls this handler while the system is still officially
 suspended, so anything done at resume time is too late.
 
-Drop key events while pm_suspend_target_state says a system suspend is in
+Drop key events while pm_suspend_in_progress() says a system suspend is in
 progress. The interrupt has already done its job as a wakeup source; the
 matching release, if it lands after resume, is a lone key-up that nobody
 acts on.
@@ -43,7 +43,7 @@ systemd-logind in the same second.
 +	 * AXP288 does it. Drop the event instead of reporting it to
 +	 * userspace, which would otherwise suspend the system right away.
 +	 */
-+	if (pm_suspend_target_state != PM_SUSPEND_ON)
++	if (pm_suspend_in_progress())
 +		return IRQ_HANDLED;
 +
 +	/*
