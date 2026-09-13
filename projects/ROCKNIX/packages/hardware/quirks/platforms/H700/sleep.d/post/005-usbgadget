@@ -1,0 +1,22 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+
+. /etc/profile
+
+### musb drops the USB session when the SoC suspends and nothing restarts it on
+### resume, so a host that stayed plugged in never re-enumerates the gadget
+### (seen on the RG34XX; the RG35XX H usually recovers by itself). If the
+### gadget is still detached a few seconds after resume, re-bind it to the
+### controller, which is what a cable replug does electrically.
+UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
+GADGET=$(ls -d /sys/kernel/config/usb_gadget/*/ 2>/dev/null | head -n1)
+[ -n "${UDC}" ] && [ -n "${GADGET}" ] || exit 0
+[ "$(cat "${GADGET}/UDC" 2>/dev/null)" = "${UDC}" ] || exit 0
+
+sleep 3
+[ "$(cat "/sys/class/udc/${UDC}/state")" = "not attached" ] || exit 0
+
+echo "" > "${GADGET}/UDC"
+sleep 1
+echo "${UDC}" > "${GADGET}/UDC"
