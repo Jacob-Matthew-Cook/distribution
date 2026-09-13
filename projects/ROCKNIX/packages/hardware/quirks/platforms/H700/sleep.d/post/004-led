@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+
+. /etc/profile
+
+### The generic post hook restores the LED from led.color; when nothing is
+### saved there it does nothing and the LED stays off, so fall back to the
+### default (green, as at boot).
+COLOR=$(get_setting led.color)
+[ -n "${COLOR}" ] || /usr/bin/ledcontrol default
