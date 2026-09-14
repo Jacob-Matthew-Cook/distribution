@@ -1,0 +1,65 @@
+From: Jacob Cook <jacobmcook1984@gmail.com>
+Subject: [PATCH] mmc: sunxi: dump state and retry once when the clock update times out
+
+Diagnostic for the games-card loss after s2idle on the RG34XX: the
+first clock update after runtime resume times out five times over 3 s,
+then the card is dropped, then re-enumerates fine two seconds later.
+On timeout dump the controller registers and the module clock state,
+then reset the controller and retry the update once.
+
+Test-only; not for the PR as is.
+
+---
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -10,6 +10,7 @@
+  */
+ 
+ #include <linux/clk.h>
++#include <linux/clk-provider.h>
+ #include <linux/clk/sunxi-ng.h>
+ #include <linux/delay.h>
+ #include <linux/device.h>
+@@ -687,8 +688,40 @@
+ 		   mmc_readl(host, REG_RINTR) & ~SDXC_SDIO_INTERRUPT);
+ 
+ 	if (rval & SDXC_START) {
+-		dev_err(mmc_dev(host->mmc), "fatal err update clk timeout\n");
+-		return -EIO;
++		struct clk *parent = clk_get_parent(host->clk_mmc);
++
++		dev_err(mmc_dev(host->mmc),
++			"fatal err update clk timeout: gctrl %08x clkcr %08x cmdr %08x stas %08x rintr %08x ntsr %08x mmc clk %lu Hz %s parent %s %lu Hz\n",
++			mmc_readl(host, REG_GCTRL), mmc_readl(host, REG_CLKCR),
++			rval, mmc_readl(host, REG_STAS),
++			mmc_readl(host, REG_RINTR), mmc_readl(host, REG_SD_NTSR),
++			clk_get_rate(host->clk_mmc),
++			__clk_is_enabled(host->clk_mmc) ? "on" : "off",
++			parent ? __clk_get_name(parent) : "?",
++			parent ? clk_get_rate(parent) : 0);
++
++		/* Kick the controller and try the clock update once more. */
++		if (sunxi_mmc_reset_host(host))
++			return -EIO;
++		rval = mmc_readl(host, REG_CLKCR);
++		rval &= ~(SDXC_CARD_CLOCK_ON | SDXC_LOW_POWER_ON | SDXC_MASK_DATA0);
++		if (oclk_en)
++			rval |= SDXC_CARD_CLOCK_ON;
++		if (host->cfg->mask_data0)
++			rval |= SDXC_MASK_DATA0;
++		mmc_writel(host, REG_CLKCR, rval);
++		expire = jiffies + msecs_to_jiffies(750);
++		mmc_writel(host, REG_CMDR,
++			   SDXC_START | SDXC_UPCLK_ONLY | SDXC_WAIT_PRE_OVER);
++		do {
++			rval = mmc_readl(host, REG_CMDR);
++		} while (time_before(jiffies, expire) && (rval & SDXC_START));
++		mmc_writel(host, REG_RINTR,
++			   mmc_readl(host, REG_RINTR) & ~SDXC_SDIO_INTERRUPT);
++		dev_err(mmc_dev(host->mmc), "update clk retry after host reset: %s\n",
++			(rval & SDXC_START) ? "still stuck" : "recovered");
++		if (rval & SDXC_START)
++			return -EIO;
+ 	}
+ 
+ 	if (host->cfg->mask_data0) {
