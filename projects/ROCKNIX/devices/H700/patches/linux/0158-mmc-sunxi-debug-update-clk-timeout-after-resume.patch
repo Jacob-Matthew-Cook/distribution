@@ -3,7 +3,11 @@ Subject: [PATCH] mmc: sunxi: diagnose the clock-update timeout after resume
 
 Test-only. Verify the CLKCR write before the update command, and on
 timeout dump the controller state, then retry once without a reset and
-once after a host reset, logging which one recovers.
+once after a full host re-init (sunxi_mmc_init_host: reset plus the
+interrupt/IMASK/DMA setup the driver's own resume path does), logging
+which one recovers. A bare sunxi_mmc_reset_host() here leaves the
+global interrupt enable cleared, so the next command never completes
+and the card's runtime resume hangs forever.
 
 ---
 --- a/drivers/mmc/host/sunxi-mmc.c
@@ -45,9 +49,9 @@ once after a host reset, logging which one recovers.
 +			parent ? __clk_get_name(parent) : "?",
 +			parent ? clk_get_rate(parent) : 0);
 +
-+		/* Step 1: plain retry, no reset. Step 2: after a host reset. */
++		/* Step 1: plain retry. Step 2: after a full host re-init. */
 +		for (step = 1; step <= 2; step++) {
-+			if (step == 2 && sunxi_mmc_reset_host(host))
++			if (step == 2 && sunxi_mmc_init_host(host))
 +				return -EIO;
 +			rval = mmc_readl(host, REG_CLKCR);
 +			rval &= ~(SDXC_CARD_CLOCK_ON | SDXC_LOW_POWER_ON | SDXC_MASK_DATA0);
@@ -65,7 +69,7 @@ once after a host reset, logging which one recovers.
 +			mmc_writel(host, REG_RINTR,
 +				   mmc_readl(host, REG_RINTR) & ~SDXC_SDIO_INTERRUPT);
 +			dev_err(mmc_dev(host->mmc), "update clk retry %d (%s): %s, clkcr %08x stas %08x\n",
-+				step, step == 1 ? "no reset" : "after host reset",
++				step, step == 1 ? "no reset" : "after host re-init",
 +				(rval & SDXC_START) ? "still stuck" : "recovered",
 +				mmc_readl(host, REG_CLKCR), mmc_readl(host, REG_STAS));
 +			if (!(rval & SDXC_START))
