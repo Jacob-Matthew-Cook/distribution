@@ -40,8 +40,13 @@ modules() {
   log $0 "Modules: ${1}"
   case ${1} in
     stop)
-      if [ -e "/usr/config/modules.bad" ]; then
-        for module in $(cat /usr/config/modules.bad); do
+      MODULES_BAD="/usr/config/modules.bad"
+      for OVERRIDE in /usr/lib/autostart/quirks/platforms/"${HW_DEVICE}"/modules.bad \
+                      /usr/lib/autostart/quirks/devices/"${QUIRK_DEVICE}"/modules.bad; do
+        [ -e "${OVERRIDE}" ] && MODULES_BAD="${OVERRIDE}"
+      done
+      if [ -e "${MODULES_BAD}" ]; then
+        for module in $(cat "${MODULES_BAD}"); do
           EXISTS=$(lsmod | grep ${module})
           if [ $? = 0 ]; then
             echo ${module} >>/tmp/modules.load
