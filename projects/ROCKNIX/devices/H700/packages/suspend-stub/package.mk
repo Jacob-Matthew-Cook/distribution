@@ -18,16 +18,25 @@ PKG_NEED_UNPACK="$(get_pkg_directory u-boot-DDR4) $(get_pkg_directory u-boot-DDR
 
 # atf builds one bl31 that both bootloader variants embed, so it carries a
 # stub per memory type and picks the one the running DRAM matches. Each entry
-# is <bootloader package>:<defconfig>:<output name>.
-PKG_STUB_VARIANTS="u-boot-DDR4:anbernic_rg35xx_h700_lpddr4_defconfig:suspend_stub_lpddr4.bin \
-                   u-boot-DDR3:anbernic_rg35xx_h700_lpddr3_defconfig:suspend_stub_lpddr3.bin"
+# is <bootloader package>:<output name>; the configuration comes from the
+# bootloader package itself.
+PKG_STUB_VARIANTS="u-boot-DDR4:suspend_stub_lpddr4.bin \
+                   u-boot-DDR3:suspend_stub_lpddr3.bin"
 
 # Build one stub per memory type: copy U-Boot's DRAM sources, patch the resume
 # path into them, generate the parameters from that bootloader's defconfig.
 stub_variant() {
-  local uboot="${1}" defconfig="${2}" out="${3}" dir="${PKG_BUILD}/${3%.bin}"
-  local uboot_dir="$(get_build_dir ${uboot})" type mstr timings
+  local uboot="${1}" out="${2}" dir="${PKG_BUILD}/${2%.bin}"
+  local uboot_dir="$(get_build_dir ${uboot})"
+  local kconfig="${uboot_dir}/arch/arm/mach-sunxi/Kconfig"
+  local defconfig type mstr timings clk sym val
 
+  # Read the configuration name from the bootloader package rather than
+  # repeating it here, so a stub can never be built from a different
+  # configuration than the bootloader it ships inside.
+  defconfig="$(sed -n 's/^[[:space:]]*PKG_UBOOT_CONFIG="\([^"]*\)".*/\1/p' \
+                 "$(get_pkg_directory ${uboot})/package.mk" | head -1)"
+  [ -n "${defconfig}" ] || die "suspend-stub: no PKG_UBOOT_CONFIG in ${uboot}"
   [ -r "${uboot_dir}/configs/${defconfig}" ] ||
     die "suspend-stub: ${defconfig} not found in ${uboot}"
   defconfig="${uboot_dir}/configs/${defconfig}"
@@ -49,20 +58,44 @@ stub_variant() {
   grep -E '^CONFIG_(DRAM_|SUNXI_DRAM_H616_)' ${defconfig} |
     sed -e 's/=y$/ 1/' -e 's/=/ /' -e 's/^/#define /' >${dir}/boards/board.h
   grep -q "^#define CONFIG_DRAM_CLK " ${dir}/boards/board.h ||
-    die "suspend-stub: no CONFIG_DRAM_* found in ${defconfig}"
-  # Symbols the driver reads but the defconfig leaves at their Kconfig
-  # default, taken from U-Boot's own Kconfig rather than assumed here.
-  awk '/^config DRAM_[A-Z0-9_]+$/ { name = $2; next }
-       /^\tdefault / && name != "" && $2 ~ /^0x?[0-9a-fA-F]*$/ {
-         print "#define CONFIG_" name " " $2; name = ""; next }
-       /^config |^endmenu|^menu/ { name = "" }' \
-    ${uboot_dir}/arch/arm/mach-sunxi/Kconfig |
-    while read -r line; do
-      sym=$(echo "${line}" | cut -d' ' -f2)
-      grep -q "^#define ${sym} " ${dir}/boards/board.h || echo "${line}"
-    done >>${dir}/boards/board.h
+    die "suspend-stub: no CONFIG_DRAM_CLK found in ${defconfig}"
+
+  # Values the DRAM code reads that the defconfig leaves at their Kconfig
+  # default, taken from U-Boot's own Kconfig rather than assumed here. Only an
+  # unconditional numeric default is accepted: a "default X if Y" is chosen per
+  # SoC family, so baking one in would quietly supply another chip's value and
+  # show up as a corrupt resume rather than a failed build. A bool left unset
+  # is the one legitimate absence, since the driver tests those with #ifdef.
+  for sym in $(grep -ohE 'CONFIG_DRAM_[A-Z0-9_]+' ${dir}/src/*.[ch] ${dir}/src/dram/*.c | sort -u); do
+    if grep -q "^#define ${sym} " ${dir}/boards/board.h; then
+      continue
+    fi
+    if [ "$(awk -v s="config ${sym#CONFIG_}" '$0 == s { f = 1; next }
+              f && /^config / { exit }
+              f && /^\t(bool|hex|int|string)/ { print $1; exit }' ${kconfig})" = "bool" ]; then
+      continue
+    fi
+    val="$(awk -v s="config ${sym#CONFIG_}" '$0 == s { f = 1; next }
+             f && /^config / { exit }
+             f && /^\tdefault / {
+               if ($0 !~ / if / && $2 ~ /^(0x[0-9a-fA-F]+|[0-9]+)$/) print $2
+               exit }' ${kconfig})"
+    [ -n "${val}" ] ||
+      die "suspend-stub: the DRAM code reads ${sym}, but ${defconfig##*/} does not set it and its Kconfig default is not usable here"
+    echo "#define ${sym} ${val}" >>${dir}/boards/board.h
+  done
+
   echo "#define STUB_DRAM_TYPE ${type}" >>${dir}/boards/board.h
   echo "#define STUB_MSTR_DEVICETYPE ${mstr}" >>${dir}/boards/board.h
+
+  # TF-A tells the stubs apart by DRAM type and clock alone, so two that agree
+  # on both would be indistinguishable at runtime and one would be chosen
+  # arbitrarily. Refuse to build that rather than ship it.
+  clk="$(awk '$2 == "CONFIG_DRAM_CLK" { print $3 }' ${dir}/boards/board.h)"
+  if grep -qx "${type} ${clk}" ${PKG_BUILD}/.stub-keys; then
+    die "suspend-stub: ${out} is DRAM type ${type} at ${clk} MHz, same as an earlier stub; TF-A could not tell them apart"
+  fi
+  echo "${type} ${clk}" >>${PKG_BUILD}/.stub-keys
 
   ( cd ${dir}
     local cflags="-I${PKG_BUILD}/include -I${PKG_BUILD}/compat -Iboards \
@@ -85,8 +118,9 @@ stub_variant() {
 }
 
 make_target() {
+  : >${PKG_BUILD}/.stub-keys
   for v in ${PKG_STUB_VARIANTS}; do
-    stub_variant "${v%%:*}" "$(echo ${v} | cut -d: -f2)" "${v##*:}"
+    stub_variant "${v%:*}" "${v##*:}"
   done
   ls -l ${PKG_BUILD}/suspend_stub_*.bin
 }
