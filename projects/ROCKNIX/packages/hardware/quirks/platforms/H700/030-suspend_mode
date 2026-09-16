@@ -4,8 +4,19 @@
 
 . /etc/profile.d/001-functions
 
-# drop the power-key override written while sleep was disabled
-rm -f /storage/.config/logind.conf.d/login.conf
+MIGRATED="/storage/.config/.h700_sleep_migrated"
+OVERRIDE="/storage/.config/logind.conf.d/login.conf"
+
+# Sleep was disabled on H700 until this platform had a working suspend path:
+# the old quirk ran "suspendmode off" and wrote a logind override ignoring the
+# power key, both of which persist across an update. Undo them once, then
+# leave whatever the user picks afterwards alone.
+if [ ! -e "${MIGRATED}" ]
+then
+  grep -qs '^HandlePowerKey=ignore' "${OVERRIDE}" && rm -f "${OVERRIDE}"
+  [ "$(get_setting system.suspendmode)" = "off" ] && del_setting system.suspendmode
+  touch "${MIGRATED}"
+fi
 
 # this sets systemd's SuspendState; whether that resolves to s2idle
 # or deep is the kernel's choice, made from what firmware offers
