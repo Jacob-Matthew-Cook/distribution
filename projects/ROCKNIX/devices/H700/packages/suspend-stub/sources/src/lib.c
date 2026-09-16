@@ -90,6 +90,16 @@ void stub_fail_record(unsigned long reg, u32 kind)
 	writel((stub_params.stage << 16) | kind, STUB_RTC_FAIL_INFO_REG);
 }
 
+/* Never return to DRAM or select an unverified clock after a fatal failure. */
+__attribute__((noreturn)) void stub_fatal(unsigned long reg, u32 kind, u32 result)
+{
+	stub_fail_record(reg, kind);
+	stage(result);
+	writel(result, STUB_RTC_RESULT_REG);
+	wdog_arm();
+	stub_panic();
+}
+
 /* For busy loops in the DRAM driver: log and report an expired deadline. */
 bool stub_expired(u64 deadline, unsigned long reg)
 {
@@ -103,7 +113,7 @@ bool stub_expired(u64 deadline, unsigned long reg)
 }
 
 /*
- * U-Boot's version panics on timeout; here we record it and carry on.
+ * Record the first timeout and reset without continuing a failed handshake.
  * Every wait is logged to RTC registers so a hang can be located after the
  * watchdog has reset the board.
  */
@@ -115,7 +125,7 @@ void mctl_await_completion(u32 *reg, u32 mask, u32 val)
 
 	if (!wait_reg((unsigned long)reg, mask, val, 1000000)) {
 		dram_timeout = true;
-		stub_fail_record((unsigned long)reg, FAIL_AWAIT_TIMEOUT);
+		stub_fatal((unsigned long)reg, FAIL_AWAIT_TIMEOUT, STAGE_DRAM_FAILED);
 	}
 }
 

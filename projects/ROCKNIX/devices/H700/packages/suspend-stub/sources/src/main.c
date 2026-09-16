@@ -177,6 +177,8 @@ void stub_main(void)
 	stage(STAGE_WFI);
 	wait_for_wakeup();
 
+	/* Cover clock restoration as well as DRAM recovery with the watchdog. */
+	wdog_arm();
 	clocks_up();
 	stage(STAGE_CLOCKS_UP);
 
@@ -186,7 +188,6 @@ void stub_main(void)
 	dbg_hex(stub_params.wake_irq);
 	dbg_puts("\n");
 
-	wdog_arm();
 	stage(STAGE_DRAM_INIT);
 	dram_resume(&config);
 	wdog_restore();

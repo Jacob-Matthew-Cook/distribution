@@ -120,8 +120,10 @@ bool dram_enter_selfrefresh_keep_phy(void)
 
 	setbits_le32(CTL(CTL_PWRCTL), PWRCTL_SELFREF_SW | PWRCTL_SELFREF_EN);
 	if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_SELFREF, 100000)) {
+		stub_fail_record(CTL(CTL_STAT), FAIL_SR_ENTER_TIMEOUT);
 		writel(keep_pwrctl, CTL(CTL_PWRCTL));
-		wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_NORMAL, 100000);
+		if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_NORMAL, 100000))
+			stub_fatal(CTL(CTL_STAT), FAIL_SR_ROLLBACK_TIMEOUT, STAGE_SR_FAILED);
 		writel(keep_maer[0], COM(COM_MAER0));
 		writel(keep_maer[1], COM(COM_MAER1));
 		writel(keep_maer[2], COM(COM_MAER2));
@@ -153,6 +155,7 @@ bool dram_enter_selfrefresh(void)
 	u32 maer0 = readl(COM(COM_MAER0));
 	u32 maer1 = readl(COM(COM_MAER1));
 	u32 maer2 = readl(COM(COM_MAER2));
+	u32 pwrctl = readl(CTL(CTL_PWRCTL));
 
 	/* No more bus masters */
 	writel(0, COM(COM_MAER0));
@@ -161,9 +164,11 @@ bool dram_enter_selfrefresh(void)
 
 	setbits_le32(CTL(CTL_PWRCTL), PWRCTL_SELFREF_SW | PWRCTL_SELFREF_EN);
 	if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_SELFREF, 100000)) {
-		/* Back out: DRAM is still refreshed by the controller */
-		clrbits_le32(CTL(CTL_PWRCTL), PWRCTL_SELFREF_SW | PWRCTL_SELFREF_EN);
-		wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_NORMAL, 100000);
+		/* Restore the prior policy, and verify DRAM before reopening masters. */
+		stub_fail_record(CTL(CTL_STAT), FAIL_SR_ENTER_TIMEOUT);
+		writel(pwrctl, CTL(CTL_PWRCTL));
+		if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_NORMAL, 100000))
+			stub_fatal(CTL(CTL_STAT), FAIL_SR_ROLLBACK_TIMEOUT, STAGE_SR_FAILED);
 		writel(maer0, COM(COM_MAER0));
 		writel(maer1, COM(COM_MAER1));
 		writel(maer2, COM(COM_MAER2));
@@ -177,7 +182,8 @@ bool dram_enter_selfrefresh(void)
 	writel(0, CTL(CTL_SWCTL));
 	clrsetbits_le32(CTL(CTL_DFIMISC), BIT(0), 0x1f20);
 	writel(1, CTL(CTL_SWCTL));
-	wait_reg(CTL(CTL_DFISTAT), BIT(0), 0, 100000);
+	if (!wait_reg(CTL(CTL_DFISTAT), BIT(0), 0, 100000))
+		stub_fatal(CTL(CTL_DFISTAT), FAIL_DFI_OFF_TIMEOUT, STAGE_SR_FAILED);
 
 	writel(0, CTL(CTL_CLKEN));
 

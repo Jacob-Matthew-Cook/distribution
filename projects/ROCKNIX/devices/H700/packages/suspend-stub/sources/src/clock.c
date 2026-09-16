@@ -56,7 +56,9 @@ void clocks_up(void)
 
 	writel(saved.pll_cpux | CCM_PLL_CTRL_EN | CCM_PLL_LOCK_EN,
 	       CCU(CCU_H6_PLL1_CFG));
-	wait_reg(CCU(CCU_H6_PLL1_CFG), CCM_PLL_LOCK, CCM_PLL_LOCK, 100000);
+	if (!wait_reg(CCU(CCU_H6_PLL1_CFG), CCM_PLL_LOCK, CCM_PLL_LOCK, 100000))
+		stub_fatal(CCU(CCU_H6_PLL1_CFG), FAIL_CPU_PLL_TIMEOUT,
+			   STAGE_CLOCK_FAILED);
 
 	writel(saved.apb2, CCU(CCU_H6_APB2_CFG));
 	writel(saved.apb1, CCU(CCU_H6_APB1_CFG));

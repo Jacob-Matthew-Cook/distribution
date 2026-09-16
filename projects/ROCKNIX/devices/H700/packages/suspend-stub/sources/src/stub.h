@@ -19,6 +19,7 @@
 #define STAGE_DRAM_DONE		0x69
 #define STAGE_MEM_RESTORED	0x6a
 #define STAGE_DRAM_FAILED	0xe0
+#define STAGE_CLOCK_FAILED	0xe1
 #define STAGE_EXCEPTION		0xee
 #define STAGE_RESUME		0x70
 
@@ -39,8 +40,13 @@
 #define FAIL_AWAIT_TIMEOUT	1
 #define FAIL_POLL_TIMEOUT	2
 #define FAIL_INIT_FALSE		3
+#define FAIL_SR_ENTER_TIMEOUT	4
+#define FAIL_SR_ROLLBACK_TIMEOUT	5
+#define FAIL_DFI_OFF_TIMEOUT	6
+#define FAIL_CPU_PLL_TIMEOUT	7
 
 void stub_fail_record(unsigned long reg, u32 kind);
+__attribute__((noreturn)) void stub_fatal(unsigned long reg, u32 kind, u32 result);
 
 extern struct sunxi_suspend_params stub_params;
 extern bool dram_timeout;
