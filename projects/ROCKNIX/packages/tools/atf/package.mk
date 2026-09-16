@@ -36,7 +36,9 @@ fi
 make_target() {
   # H700: build BL31 with PSCI SYSTEM_SUSPEND, embedding the SRAM resume stub.
   if [ "${DEVICE}" = "H700" ]; then
-    ATF_SUSPEND="SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=$(get_build_dir suspend-stub)/suspend_stub.bin"
+    STUB_DIR="$(get_build_dir suspend-stub)"
+    ATF_SUSPEND="SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=${STUB_DIR}/suspend_stub_lpddr4.bin"
+    ATF_SUSPEND+=" SUNXI_SUSPEND_STUB2=${STUB_DIR}/suspend_stub_lpddr3.bin"
   fi
 
   CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" CFLAGS="" make PLAT=${ATF_PLATFORM} ${ATF_SUSPEND} bl31

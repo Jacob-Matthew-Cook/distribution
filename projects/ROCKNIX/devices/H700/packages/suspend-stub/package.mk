@@ -13,76 +13,84 @@ PKG_TOOLCHAIN="manual"
 # The DRAM sources are U-Boot's own, taken from the bootloader package's
 # unpacked tree. Source only: a target dependency here would close the loop
 # u-boot -> atf -> suspend-stub -> u-boot.
-PKG_UBOOT="u-boot-DDR4"
-PKG_DEPENDS_UNPACK="${PKG_UBOOT}"
-PKG_NEED_UNPACK="$(get_pkg_directory ${PKG_UBOOT})"
+PKG_DEPENDS_UNPACK="u-boot-DDR4 u-boot-DDR3"
+PKG_NEED_UNPACK="$(get_pkg_directory u-boot-DDR4) $(get_pkg_directory u-boot-DDR3)"
 
-# atf builds one bl31 that both bootloader variants embed, so the stub can be
-# built for one memory type only, and LPDDR4 is the one that has been tested.
-# TF-A compares the live DRAM type and clock against these parameters before
-# it offers system suspend, so a DDR3 device loses suspend instead of resuming
-# with the wrong settings.
-PKG_UBOOT_DEFCONFIG="anbernic_rg35xx_h700_lpddr4_defconfig"
+# atf builds one bl31 that both bootloader variants embed, so it carries a
+# stub per memory type and picks the one the running DRAM matches. Each entry
+# is <bootloader package>:<defconfig>:<output name>.
+PKG_STUB_VARIANTS="u-boot-DDR4:anbernic_rg35xx_h700_lpddr4_defconfig:suspend_stub_lpddr4.bin \
+                   u-boot-DDR3:anbernic_rg35xx_h700_lpddr3_defconfig:suspend_stub_lpddr3.bin"
 
-configure_target() {
-  UBOOT_DIR="$(get_build_dir ${PKG_UBOOT})"
-  DEFCONFIG="${UBOOT_DIR}/configs/${PKG_UBOOT_DEFCONFIG}"
-  [ -r "${DEFCONFIG}" ] || die "suspend-stub: ${PKG_UBOOT_DEFCONFIG} not found in ${PKG_UBOOT}"
-  grep -q "^CONFIG_SUNXI_DRAM_H616_LPDDR4=y" "${DEFCONFIG}" ||
-    die "suspend-stub: ${PKG_UBOOT_DEFCONFIG} is no longer LPDDR4; the stub's DRAM code must match"
+# Build one stub per memory type: copy U-Boot's DRAM sources, patch the resume
+# path into them, generate the parameters from that bootloader's defconfig.
+stub_variant() {
+  local uboot="${1}" defconfig="${2}" out="${3}" dir="${PKG_BUILD}/${3%.bin}"
+  local uboot_dir="$(get_build_dir ${uboot})" type mstr timings
 
-  # DRAM sources, unmodified from U-Boot apart from the resume patch.
-  mkdir -p ${PKG_BUILD}/src/dram
-  cp ${UBOOT_DIR}/arch/arm/mach-sunxi/dram_sun50i_h616.c \
-     ${UBOOT_DIR}/arch/arm/mach-sunxi/dram_dw_helpers.c ${PKG_BUILD}/src/dram/
-  cp ${UBOOT_DIR}/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c \
-     ${PKG_BUILD}/src/dram/dram_timing.c
-  # kept out of patches/ so the framework does not try to apply it at unpack
-  patch -d ${PKG_BUILD}/src/dram -p1 <${PKG_BUILD}/dram-resume.patch
+  [ -r "${uboot_dir}/configs/${defconfig}" ] ||
+    die "suspend-stub: ${defconfig} not found in ${uboot}"
+  defconfig="${uboot_dir}/configs/${defconfig}"
 
-  # DRAM parameters straight out of that defconfig, so the stub resumes with
-  # the settings the SPL booted with.
-  mkdir -p ${PKG_BUILD}/boards
-  grep -E '^CONFIG_(DRAM_|SUNXI_DRAM_H616_)' ${DEFCONFIG} |
-    sed -e 's/=y$/ 1/' -e 's/=/ /' -e 's/^/#define /' >${PKG_BUILD}/boards/board.h
-  grep -q "^#define CONFIG_DRAM_CLK " ${PKG_BUILD}/boards/board.h ||
-    die "suspend-stub: no CONFIG_DRAM_* found in ${DEFCONFIG}"
+  case "$(grep -oE 'CONFIG_SUNXI_DRAM_H616_[A-Z0-9_]+' ${defconfig} | head -1)" in
+    *LPDDR4)   type=8; mstr="(1 << 5)"; timings=h616_lpddr4_2133.c ;;
+    *LPDDR3)   type=7; mstr="(1 << 3)"; timings=h616_lpddr3.c ;;
+    *DDR3_1333) type=3; mstr="(1 << 0)"; timings=h616_ddr3_1333.c ;;
+    *) die "suspend-stub: no known DRAM type in ${defconfig}" ;;
+  esac
+
+  mkdir -p ${dir}/src/dram ${dir}/boards
+  cp -r ${PKG_BUILD}/src/*.c ${PKG_BUILD}/src/*.S ${PKG_BUILD}/src/*.h ${dir}/src/
+  cp ${uboot_dir}/arch/arm/mach-sunxi/dram_sun50i_h616.c \
+     ${uboot_dir}/arch/arm/mach-sunxi/dram_dw_helpers.c ${dir}/src/dram/
+  cp ${uboot_dir}/arch/arm/mach-sunxi/dram_timings/${timings} ${dir}/src/dram/dram_timing.c
+  patch -d ${dir}/src/dram -p1 <${PKG_BUILD}/dram-resume.patch
+
+  grep -E '^CONFIG_(DRAM_|SUNXI_DRAM_H616_)' ${defconfig} |
+    sed -e 's/=y$/ 1/' -e 's/=/ /' -e 's/^/#define /' >${dir}/boards/board.h
+  grep -q "^#define CONFIG_DRAM_CLK " ${dir}/boards/board.h ||
+    die "suspend-stub: no CONFIG_DRAM_* found in ${defconfig}"
   # Symbols the driver reads but the defconfig leaves at their Kconfig
   # default, taken from U-Boot's own Kconfig rather than assumed here.
   awk '/^config DRAM_[A-Z0-9_]+$/ { name = $2; next }
        /^\tdefault / && name != "" && $2 ~ /^0x?[0-9a-fA-F]*$/ {
          print "#define CONFIG_" name " " $2; name = ""; next }
        /^config |^endmenu|^menu/ { name = "" }' \
-    ${UBOOT_DIR}/arch/arm/mach-sunxi/Kconfig |
+    ${uboot_dir}/arch/arm/mach-sunxi/Kconfig |
     while read -r line; do
       sym=$(echo "${line}" | cut -d' ' -f2)
-      grep -q "^#define ${sym} " ${PKG_BUILD}/boards/board.h || echo "${line}"
-    done >>${PKG_BUILD}/boards/board.h
-  # SUNXI_DRAM_TYPE_LPDDR4, and the uMCTL2 MSTR device-type bit for it.
-  echo "#define STUB_DRAM_TYPE 8" >>${PKG_BUILD}/boards/board.h
-  echo "#define STUB_MSTR_DEVICETYPE (1 << 5)" >>${PKG_BUILD}/boards/board.h
+      grep -q "^#define ${sym} " ${dir}/boards/board.h || echo "${line}"
+    done >>${dir}/boards/board.h
+  echo "#define STUB_DRAM_TYPE ${type}" >>${dir}/boards/board.h
+  echo "#define STUB_MSTR_DEVICETYPE ${mstr}" >>${dir}/boards/board.h
+
+  ( cd ${dir}
+    local cflags="-I${PKG_BUILD}/include -I${PKG_BUILD}/compat -Iboards \
+      -I${uboot_dir}/arch/arm/include/asm/arch-sunxi \
+      -include ${PKG_BUILD}/compat/stub_compat.h -include boards/board.h \
+      -DSTUB_DRAM_KEEP_PHY=0 -Os -std=gnu11 -march=armv8-a -mgeneral-regs-only \
+      -mstrict-align -mcmodel=small -ffreestanding -fno-builtin -fno-pic -fno-pie \
+      -fno-stack-protector -fno-common -ffunction-sections -fdata-sections \
+      -Wall -Wno-unused-function"
+    ${TARGET_KERNEL_PREFIX}gcc -march=armv8-a -D__ASSEMBLY__ -c src/start.S -o start.o
+    for c in src/main.c src/lib.c src/clock.c src/dram_sr.c \
+             src/dram/dram_sun50i_h616.c src/dram/dram_dw_helpers.c src/dram/dram_timing.c; do
+      ${TARGET_KERNEL_PREFIX}gcc ${cflags} -c ${c} -o $(basename ${c} .c).o
+    done
+    ${TARGET_KERNEL_PREFIX}gcc -march=armv8-a -mgeneral-regs-only -ffreestanding -nostdlib \
+      -static -no-pie -Wl,--gc-sections -Wl,-T,${PKG_BUILD}/stub.lds -Wl,--build-id=none \
+      start.o main.o lib.o clock.o dram_sr.o dram_sun50i_h616.o dram_dw_helpers.o dram_timing.o \
+      -o stub.elf
+    ${TARGET_KERNEL_PREFIX}objcopy -O binary stub.elf ${PKG_BUILD}/${out} )
 }
 
 make_target() {
-  UBOOT_DIR="$(get_build_dir ${PKG_UBOOT})"
-  CFLAGS="-Iinclude -Icompat -I${UBOOT_DIR}/arch/arm/include/asm/arch-sunxi \
-    -include compat/stub_compat.h -include boards/board.h -DSTUB_DRAM_KEEP_PHY=0 \
-    -Os -std=gnu11 -march=armv8-a -mgeneral-regs-only -mstrict-align -mcmodel=small \
-    -ffreestanding -fno-builtin -fno-pic -fno-pie -fno-stack-protector -fno-common \
-    -ffunction-sections -fdata-sections -Wall -Wno-unused-function"
-
-  ${TARGET_KERNEL_PREFIX}gcc -march=armv8-a -D__ASSEMBLY__ -c src/start.S -o start.o
-  for c in src/main.c src/lib.c src/clock.c src/dram_sr.c \
-           src/dram/dram_sun50i_h616.c src/dram/dram_dw_helpers.c src/dram/dram_timing.c; do
-    ${TARGET_KERNEL_PREFIX}gcc ${CFLAGS} -c ${c} -o $(basename ${c} .c).o
+  for v in ${PKG_STUB_VARIANTS}; do
+    stub_variant "${v%%:*}" "$(echo ${v} | cut -d: -f2)" "${v##*:}"
   done
-  ${TARGET_KERNEL_PREFIX}gcc -march=armv8-a -mgeneral-regs-only -ffreestanding -nostdlib \
-    -static -no-pie -Wl,--gc-sections -Wl,-T,stub.lds -Wl,--build-id=none \
-    start.o main.o lib.o clock.o dram_sr.o dram_sun50i_h616.o dram_dw_helpers.o dram_timing.o \
-    -o suspend_stub.elf
-  ${TARGET_KERNEL_PREFIX}objcopy -O binary suspend_stub.elf suspend_stub.bin
+  ls -l ${PKG_BUILD}/suspend_stub_*.bin
 }
 
 makeinstall_target() {
-  : # atf embeds suspend_stub.bin in bl31; nothing from this package is installed
+  : # atf embeds the stubs in bl31; nothing from this package is installed
 }
