@@ -7,7 +7,8 @@
 # drop the power-key override written while sleep was disabled
 rm -f /storage/.config/logind.conf.d/login.conf
 
-# no PSCI SYSTEM_SUSPEND on H700, so "mem" is s2idle
+# this sets systemd's SuspendState; whether that resolves to s2idle
+# or deep is the kernel's choice, made from what firmware offers
 MYSLEEPMODE=$(get_setting system.suspendmode)
 if [ -z "${MYSLEEPMODE}" ]
 then
