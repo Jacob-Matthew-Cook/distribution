@@ -16,7 +16,7 @@ case ${DEVICE} in
   H700)
     PKG_VERSION="2.12.0"
     PKG_DEPENDS_TARGET+=" suspend-stub"
-    # BL31 embeds the stubs, so a stub change has to rebuild this package.
+    # BL31 embeds the stubs
     PKG_NEED_UNPACK+=" $(get_build_dir suspend-stub)"
   ;;
   *)
@@ -36,7 +36,6 @@ if [ "${ATF_PLATFORM}" = "rk3399" ]; then
 fi
 
 make_target() {
-  # H700: build BL31 with PSCI SYSTEM_SUSPEND, embedding the SRAM resume stub.
   if [ "${DEVICE}" = "H700" ]; then
     STUB_DIR="$(get_build_dir suspend-stub)"
     ATF_SUSPEND="SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=${STUB_DIR}/suspend_stub_lpddr4.bin"

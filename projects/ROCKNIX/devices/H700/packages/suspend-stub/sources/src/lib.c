@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
-/*
- * Freestanding helpers for the H616 SRAM suspend stub.
- */
+/* Freestanding helpers for the SRAM suspend stub. */
 
 #include <asm/io.h>
 #include "stub.h"

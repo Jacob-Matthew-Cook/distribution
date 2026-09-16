@@ -7,10 +7,8 @@
 MIGRATED="/storage/.config/.h700_sleep_migrated"
 OVERRIDE="/storage/.config/logind.conf.d/login.conf"
 
-# Sleep was disabled on H700 until this platform had a working suspend path:
-# the old quirk ran "suspendmode off" and wrote a logind override ignoring the
-# power key, both of which persist across an update. Undo them once, then
-# leave whatever the user picks afterwards alone.
+# The old quirk ran "suspendmode off" and wrote a logind override ignoring
+# the power key; both persist across an update. Undo them once.
 if [ ! -e "${MIGRATED}" ]
 then
   grep -qs '^HandlePowerKey=ignore' "${OVERRIDE}" && rm -f "${OVERRIDE}"

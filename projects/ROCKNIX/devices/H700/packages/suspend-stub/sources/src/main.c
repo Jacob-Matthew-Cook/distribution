@@ -7,11 +7,6 @@
  * "universal standby" path of the Anbernic stock firmware: DRAM goes into
  * self-refresh, clocks are gated, the boot CPU waits for an interrupt and
  * DRAM is brought back before returning to BL31's warm boot entry.
- *
- * STUB_DRAM_KEEP_PHY=1: the DRAM controller and PHY stay clocked during
- *   sleep; resume only leaves self-refresh.
- * STUB_DRAM_KEEP_PHY=0: controller, PHY and PLL_DDR are shut down like the
- *   BSP does; resume re-initialises and re-trains them (U-Boot DRAM driver).
  */
 
 #include <asm/io.h>
@@ -86,21 +81,6 @@ static __attribute__((noreturn)) void resume_failed(void)
 	stub_panic();
 }
 
-#if STUB_DRAM_KEEP_PHY
-
-static bool dram_suspend(const struct dram_config *config)
-{
-	return dram_enter_selfrefresh_keep_phy();
-}
-
-static void dram_resume(const struct dram_config *config)
-{
-	if (!dram_exit_selfrefresh_keep_phy())
-		resume_failed();
-	stage(STAGE_DRAM_DONE);
-}
-
-#else /* !STUB_DRAM_KEEP_PHY */
 
 static u32 save_lo[SAVE_WORDS];
 static u32 save_hi[SAVE_WORDS];
@@ -131,8 +111,6 @@ static void dram_resume(const struct dram_config *config)
 	memcpy((void *)save_hi_addr, save_hi, sizeof(save_hi));
 	stage(STAGE_MEM_RESTORED);
 }
-
-#endif /* STUB_DRAM_KEEP_PHY */
 
 void stub_main(void)
 {

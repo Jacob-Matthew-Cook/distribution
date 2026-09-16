@@ -99,57 +99,6 @@ u32 dram_config_word(const struct dram_config *config)
 	       config->bus_full_width << 24;
 }
 
-static u32 keep_maer[3];
-static u32 keep_pwrctl;
-
-/*
- * Self-refresh with the controller and PHY left clocked and out of reset.
- * No re-training is needed on exit, at the cost of keeping PLL_DDR and the
- * DRAM PHY powered during sleep.
- */
-bool dram_enter_selfrefresh_keep_phy(void)
-{
-	keep_maer[0] = readl(COM(COM_MAER0));
-	keep_maer[1] = readl(COM(COM_MAER1));
-	keep_maer[2] = readl(COM(COM_MAER2));
-	keep_pwrctl = readl(CTL(CTL_PWRCTL));
-
-	writel(0, COM(COM_MAER0));
-	writel(0, COM(COM_MAER1));
-	writel(0, COM(COM_MAER2));
-
-	setbits_le32(CTL(CTL_PWRCTL), PWRCTL_SELFREF_SW | PWRCTL_SELFREF_EN);
-	if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_SELFREF, 100000)) {
-		stub_fail_record(CTL(CTL_STAT), FAIL_SR_ENTER_TIMEOUT);
-		writel(keep_pwrctl, CTL(CTL_PWRCTL));
-		if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_NORMAL, 100000))
-			stub_fatal(CTL(CTL_STAT), FAIL_SR_ROLLBACK_TIMEOUT, STAGE_SR_FAILED);
-		writel(keep_maer[0], COM(COM_MAER0));
-		writel(keep_maer[1], COM(COM_MAER1));
-		writel(keep_maer[2], COM(COM_MAER2));
-		return false;
-	}
-
-	return true;
-}
-
-bool dram_exit_selfrefresh_keep_phy(void)
-{
-	writel(keep_pwrctl & ~(PWRCTL_SELFREF_SW | PWRCTL_SELFREF_EN),
-	       CTL(CTL_PWRCTL));
-	if (!wait_reg(CTL(CTL_STAT), STAT_MODE_MASK, STAT_MODE_NORMAL, 1000000)) {
-		stub_fail_record(CTL(CTL_STAT), FAIL_AWAIT_TIMEOUT);
-		return false;
-	}
-
-	writel(keep_pwrctl, CTL(CTL_PWRCTL));
-	writel(keep_maer[0], COM(COM_MAER0));
-	writel(keep_maer[1], COM(COM_MAER1));
-	writel(keep_maer[2], COM(COM_MAER2));
-
-	return true;
-}
-
 bool dram_enter_selfrefresh(void)
 {
 	u32 maer0 = readl(COM(COM_MAER0));

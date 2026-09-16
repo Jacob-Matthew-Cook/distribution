@@ -4,7 +4,7 @@
  * masked. Returns to BL31's warm boot entry point.
  */
 
-#define RESUME_ENTRY_OFFSET	0x10	/* offsetof(struct sunxi_suspend_params, resume_entry) */
+#define RESUME_ENTRY_OFFSET	0x10	/* checked by _Static_assert in main.c */
 
 	.section .head, "ax"
 	.globl	_head
@@ -82,13 +82,13 @@ stub_vectors:
 
 stub_exception:
 	mrs	x0, esr_el3
-	ldr	x1, =0x07000128
+	ldr	x1, =0x07000128		/* STUB_RTC_EXC_ESR_REG */
 	str	w0, [x1]
 	mrs	x0, elr_el3
-	ldr	x1, =0x0700012c
+	ldr	x1, =0x0700012c		/* STUB_RTC_EXC_ELR_REG */
 	str	w0, [x1]
 	mov	w0, #0xee
-	ldr	x1, =0x0700010c
+	ldr	x1, =0x0700010c		/* STUB_RTC_STAGE_REG */
 	str	w0, [x1]
 	mov	w0, #1			/* whole system reset */
 	ldr	x1, =0x030090b4		/* WDOG0 CFG */

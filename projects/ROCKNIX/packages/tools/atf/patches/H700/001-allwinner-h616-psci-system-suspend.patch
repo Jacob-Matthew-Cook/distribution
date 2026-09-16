@@ -1,19 +1,15 @@
 From: Kailash R S <kailashrs@users.noreply.github.com>
 Subject: [PATCH] allwinner: h616: PSCI SYSTEM_SUSPEND via an SRAM stub
 
-From kailashrs' H700_rocknix_enhancement. TF-A copies a stub into SRAM A1
-and jumps to it with the MMU and caches off; the stub puts DRAM into
-self-refresh, stops the controller, PHY and PLL, and waits in WFI. A wake
-interrupt resumes it, DRAM is re-initialised without touching its contents,
-and control returns to the warm entrypoint, so Linux keeps its session.
+From kailashrs' H700_rocknix_enhancement. BL31 copies a stub into SRAM A1
+and jumps to it with the MMU off; it puts DRAM into self-refresh, waits
+in WFI and re-initialises DRAM on wake without touching its contents.
 
-Stubs are built separately (they need U-Boot's DRAM driver) and embedded
-with SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=<path>, optionally with a
-second one in SUNXI_SUSPEND_STUB2. Without those the build is unchanged.
-
-One BL31 is shared by every bootloader build, so at runtime TF-A reads the
-live DRAM type and clock and picks the stub built for that memory, leaving
-system suspend unavailable when none of them matches.
+Enabled with SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=<path>, optionally
+SUNXI_SUSPEND_STUB2 for a second memory type: one BL31 serves every
+bootloader build, so TF-A picks the stub whose DRAM type and clock match
+at boot and leaves system suspend unavailable when none does. Unset, the
+build is unchanged.
 
 ---
 diff -Nur a/plat/allwinner/common/include/sunxi_private.h b/plat/allwinner/common/include/sunxi_private.h
@@ -39,7 +35,7 @@ diff -Nur a/plat/allwinner/common/include/sunxi_private.h b/plat/allwinner/commo
 diff -Nur a/plat/allwinner/common/sunxi_native_pm.c b/plat/allwinner/common/sunxi_native_pm.c
 --- a/plat/allwinner/common/sunxi_native_pm.c
 +++ b/plat/allwinner/common/sunxi_native_pm.c
-@@ -75,7 +75,61 @@
+@@ -75,7 +75,57 @@
  	.validate_ns_entrypoint		= sunxi_validate_ns_entrypoint,
  };
  
@@ -47,11 +43,7 @@ diff -Nur a/plat/allwinner/common/sunxi_native_pm.c b/plat/allwinner/common/sunx
 +#define SUNXI_SYSTEM_PWR_STATE(state) \
 +	((state)->pwr_domain_state[PLAT_MAX_PWR_LVL])
 +
-+/*
-+ * Only SYSTEM_SUSPEND gets here, CPU_SUSPEND is not offered. The GIC stays
-+ * powered and keeps the state the OS left it in, and its CPU interface has
-+ * to stay enabled so the wake-up interrupt can end WFI in the SRAM stub.
-+ */
++/* Nothing to do: the GIC and its CPU interface stay up so the wake IRQ can end the stub's WFI. */
 +static void sunxi_pwr_domain_suspend(const psci_power_state_t *target_state)
 +{
 +}
@@ -177,14 +169,12 @@ diff -Nur a/plat/allwinner/sun50i_h616/include/sunxi_suspend_params.h b/plat/all
 diff -Nur a/plat/allwinner/sun50i_h616/platform.mk b/plat/allwinner/sun50i_h616/platform.mk
 --- a/plat/allwinner/sun50i_h616/platform.mk
 +++ b/plat/allwinner/sun50i_h616/platform.mk
-@@ -23,3 +23,33 @@
+@@ -23,3 +23,31 @@
  				drivers/allwinner/sunxi_rsb.c		\
  				drivers/mentor/i2c/mi2cv.c		\
  				${AW_PLAT}/${PLAT}/sunxi_h616_dtb.c
 +
-+# PSCI SYSTEM_SUSPEND: DRAM self-refresh handled by an SRAM stub that is
-+# built separately (it contains the DRAM init code) and embedded here.
-+#   SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=<path>/suspend_stub.bin
++# SUNXI_SYSTEM_SUSPEND=1 SUNXI_SUSPEND_STUB=<path>/suspend_stub.bin
 +SUNXI_SYSTEM_SUSPEND	?=	0
 +SUNXI_SUSPEND_DEBUG	?=	0
 +$(eval $(call assert_boolean,SUNXI_SYSTEM_SUSPEND))
@@ -214,18 +204,14 @@ diff -Nur a/plat/allwinner/sun50i_h616/platform.mk b/plat/allwinner/sun50i_h616/
 diff -Nur a/plat/allwinner/sun50i_h616/sunxi_suspend.c b/plat/allwinner/sun50i_h616/sunxi_suspend.c
 --- a/plat/allwinner/sun50i_h616/sunxi_suspend.c
 +++ b/plat/allwinner/sun50i_h616/sunxi_suspend.c
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,174 @@
 +/*
 + * Copyright (c) 2026, ARM Limited and Contributors. All rights reserved.
 + *
 + * SPDX-License-Identifier: BSD-3-Clause
 + *
 + * PSCI SYSTEM_SUSPEND for the H616/H700 without a management processor.
-+ *
-+ * DRAM cannot be used while it is in self-refresh, so the actual suspend
-+ * sequence runs from SRAM A1: a separately built stub (DRAM self-refresh,
-+ * clock gating, WFI, DRAM re-init) is embedded into BL31, copied to SRAM
-+ * when the system suspends, and returns to the BL31 warm boot entry point.
++ * The sequence runs from SRAM A1; see sunxi_suspend_params.h.
 + */
 +
 +#include <string.h>
@@ -244,7 +230,6 @@ diff -Nur a/plat/allwinner/sun50i_h616/sunxi_suspend.c b/plat/allwinner/sun50i_h
 +
 +#define SUNXI_DRAM_CTL0_BASE		0x047fb000
 +#define SUNXI_DRAM_MSTR_REG		(SUNXI_DRAM_CTL0_BASE + 0x000)
-+#define SUNXI_DRAM_STAT_REG		(SUNXI_DRAM_CTL0_BASE + 0x004)
 +#define SUNXI_CCU_PLL_DDR0_REG		(SUNXI_CCU_BASE + 0x010)
 +
 +/* Keep one page of SRAM A1 for the stub's stack and saved data. */

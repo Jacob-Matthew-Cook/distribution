@@ -15,7 +15,7 @@
 #define STAGE_WFI		0x40
 #define STAGE_CLOCKS_UP		0x50
 #define STAGE_DRAM_INIT		0x60
-/* 0x61..0x68: markers inside the U-Boot DRAM driver, see prepare_dram.py */
+/* 0x61..0x68: markers inside the patched U-Boot DRAM driver, see dram-resume.patch */
 #define STAGE_DRAM_DONE		0x69
 #define STAGE_MEM_RESTORED	0x6a
 #define STAGE_DRAM_FAILED	0xe0
@@ -76,10 +76,8 @@ void cpu_clock_restore(void);
 bool dram_read_config(struct dram_config *config);
 u32 dram_config_word(const struct dram_config *config);
 bool dram_enter_selfrefresh(void);
-bool dram_enter_selfrefresh_keep_phy(void);
-bool dram_exit_selfrefresh_keep_phy(void);
 
-/* dram_sun50i_h616.c (generated from U-Boot) */
+/* dram_sun50i_h616.c (U-Boot copy, see dram-resume.patch) */
 bool sunxi_dram_resume_init(const struct dram_config *config);
 unsigned long mctl_calc_size(const struct dram_config *config);
 

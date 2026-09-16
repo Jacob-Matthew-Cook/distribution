@@ -1,2 +1,2 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
-/* Empty on purpose: BIT() and GENMASK() are defined in stub_compat.h. */
+/* Empty on purpose: BIT() is defined in stub_compat.h. */

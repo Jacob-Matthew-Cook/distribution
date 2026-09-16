@@ -5,26 +5,22 @@ When the power key is the wakeup source, the press is delivered to
 userspace after resume and systemd-logind suspends the system straight
 back to sleep.
 
-The AXP288 handles this by clearing the pending PEK bits from the noirq
-resume callback, but that only works for a real suspend-to-RAM where the
-IRQ thread cannot run until the devices are back. Under s2idle the nested
-regmap-irq thread runs as soon as the PMIC interrupt fires, consumes the
-status bits and calls this handler while the system is still officially
-suspended, so anything done at resume time is too late.
+The AXP288 clears the pending PEK bits from its noirq resume callback,
+but that only works for a real suspend-to-RAM where the IRQ thread
+cannot run until the devices are back. Under s2idle the nested
+regmap-irq thread runs as soon as the PMIC interrupt fires and calls
+this handler while the system is still officially suspended, so
+anything done at resume time is too late.
 
-Drop key events while pm_suspend_in_progress() says a system suspend is in
-progress. The interrupt has already done its job as a wakeup source; the
-matching release, if it lands after resume, is a lone key-up that nobody
-acts on.
+Drop the press while pm_suspend_in_progress(): the interrupt has already
+done its job as a wakeup source. The release is still reported. The same
+handler serves it, and the input core ignores an event that matches the
+current key state, so swallowing it would leave KEY_POWER held down and
+the next press would never reach userspace.
 
 Seen on the Anbernic RG35XX H (H700 + AXP717): every power-key wake from
 s2idle was followed by "Power key pressed short" / "Suspending..." from
 systemd-logind in the same second.
-
-Only the press is dropped. The same handler serves the release, and the
-input core ignores an event that matches the current key state, so
-swallowing a release would leave KEY_POWER held down and the next press
-would never reach userspace.
 
 ---
 --- a/drivers/input/misc/axp20x-pek.c
