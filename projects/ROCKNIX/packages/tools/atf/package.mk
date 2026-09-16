@@ -16,6 +16,8 @@ case ${DEVICE} in
   H700)
     PKG_VERSION="2.12.0"
     PKG_DEPENDS_TARGET+=" suspend-stub"
+    # BL31 embeds the stubs, so a stub change has to rebuild this package.
+    PKG_NEED_UNPACK+=" $(get_build_dir suspend-stub)"
   ;;
   *)
     PKG_VERSION="2.10.0"

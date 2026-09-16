@@ -12,6 +12,9 @@ PKG_LONGDESC="Das U-Boot is a cross-platform bootloader for embedded systems."
 PKG_TOOLCHAIN="manual"
 
 PKG_NEED_UNPACK="${PROJECT_DIR}/${PROJECT}/bootloader ${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/bootloader"
+# The SPL embeds atf's BL31, so a firmware change has to rebuild this
+# package; without it an incremental build keeps shipping the old one.
+PKG_NEED_UNPACK+=" $(get_build_dir atf)/build/sun50i_h616/release/bl31.bin"
 
 if [ -n "${UBOOT_FIRMWARE}" ]; then
   PKG_DEPENDS_TARGET+=" ${UBOOT_FIRMWARE}"
