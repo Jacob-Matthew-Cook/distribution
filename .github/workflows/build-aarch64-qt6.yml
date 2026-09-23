@@ -16,7 +16,7 @@ on:
 jobs:
   build-aarch64-qt6:
     if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3576' || inputs.DEVICE == 'RK3588' || inputs.DEVICE == 'S922X' 
-      || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' || inputs.DEVICE == 'SM8650' || inputs.DEVICE == 'SM8750' || inputs.DEVICE == 'SM6115' || inputs.DEVICE == 'SM4450' }}
+      || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' || inputs.DEVICE == 'SM8650' || inputs.DEVICE == 'SM8750' || inputs.DEVICE == 'SM6115' || inputs.DEVICE == 'SM4450' || inputs.DEVICE == 'AMD64' }}
     runs-on: ubuntu-24.04
     env:
       EMULATION_DEVICE: no
@@ -26,7 +26,7 @@ jobs:
       AUTOREMOVE: "yes"
       PROJECT: ${{ inputs.PROJECT }}
       DEVICE: ${{ inputs.DEVICE }}
-      ARCH: aarch64
+      ARCH: ${{ inputs.DEVICE == 'AMD64' && 'x86_64' || 'aarch64' }}
       CACHE_KEY: ccache-aarch64-${{ inputs.DEVICE }}-qt6-${{ github.sha }}
       DISABLE_COLORS: yes
       CCACHE_COMPILERCHECK: content
@@ -86,20 +86,20 @@ jobs:
           name: output.logs (${{ inputs.DEVICE }}-aarch64-qt6)
           path: |
             output.log
-            ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.threads/logs/
+            ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.threads/logs/
 
       - name: Clean ccache
         run: |
-          export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -M 2.0G
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -c
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -z
+          export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.ccache
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -s -v
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -M 2.0G
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -c
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -s -v
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -z
 
       - name: Tar ccache
         run: |
-          tar --remove-files -cf ccache-aarch64-${{ inputs.DEVICE }}-qt6.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache 
+          tar --remove-files -cf ccache-aarch64-${{ inputs.DEVICE }}-qt6.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.ccache 
 
       - name: Save ccache
         uses: softprops/action-gh-release@v3
@@ -115,8 +115,8 @@ jobs:
 
       - name: Compress directory
         run: |
-          tar --zstd --exclude='build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/build' -cf build.qt6.tar.zst \
-          build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/          
+          tar --zstd --exclude='build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/build' -cf build.qt6.tar.zst \
+          build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/          
 
       - uses: actions/upload-artifact@v7
         with:

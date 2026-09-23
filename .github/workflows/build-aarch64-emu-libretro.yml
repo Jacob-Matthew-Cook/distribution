@@ -27,7 +27,7 @@ jobs:
       AUTOREMOVE: "yes"
       PROJECT: ${{ inputs.PROJECT }}
       DEVICE: ${{ inputs.DEVICE }}
-      ARCH: aarch64
+      ARCH: ${{ inputs.DEVICE == 'AMD64' && 'x86_64' || 'aarch64' }}
       CACHE_KEY: ccache-aarch64-${{ inputs.DEVICE }}-emu-libretro-${{ github.sha }}
       DISABLE_COLORS: yes
       CCACHE_COMPILERCHECK: content
@@ -132,20 +132,20 @@ jobs:
           name: output.logs (${{ inputs.DEVICE }}-aarch64-emu-libretro)
           path: |
             output.log
-            ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.threads/logs/
+            ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.threads/logs/
 
       - name: Clean ccache
         run: |
-          export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -M 2G
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -c
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -z
+          export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.ccache
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -s -v
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -M 2G
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -c
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -s -v
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -z
 
       - name: Tar ccache
         run: |
-          tar -cf ccache-aarch64-${{ inputs.DEVICE }}-emu-libretro.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache 
+          tar -cf ccache-aarch64-${{ inputs.DEVICE }}-emu-libretro.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.ccache 
 
       - name: Save ccache
         uses: softprops/action-gh-release@v3
@@ -165,8 +165,8 @@ jobs:
       - name: Compress directory
         run: | 
           sudo tar --remove-files -cf - \
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/install_* \
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.stamps | split -b 2G -  build.emu-libretro.tar.part
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/install_* \
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.stamps | split -b 2G -  build.emu-libretro.tar.part
 
       - uses: actions/upload-artifact@v7
         with:
