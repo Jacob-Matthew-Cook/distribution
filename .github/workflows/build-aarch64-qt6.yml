@@ -66,6 +66,7 @@ jobs:
         run: rm build.aarch64.tar
 
       - name: Build
+        timeout-minutes: ${{ inputs.DEVICE == 'AMD64' && 300 || 360 }}
         uses: corrupt952/actions-retry-command@v1.0.7
         with:
           command: |
@@ -89,7 +90,9 @@ jobs:
             ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.threads/logs/
 
       - name: Clean ccache
+        if: ${{ success() || (failure() && inputs.DEVICE == 'AMD64') }}
         run: |
+          docker ps -q | xargs -r docker kill || true
           export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.ccache
           ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -s -v
           ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -M 2.0G
@@ -98,10 +101,12 @@ jobs:
           ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/toolchain/bin/ccache -z
 
       - name: Tar ccache
+        if: ${{ success() || (failure() && inputs.DEVICE == 'AMD64') }}
         run: |
           tar --remove-files -cf ccache-aarch64-${{ inputs.DEVICE }}-qt6.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.${{ env.ARCH }}/.ccache 
 
       - name: Save ccache
+        if: ${{ success() || (failure() && inputs.DEVICE == 'AMD64') }}
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ccache
