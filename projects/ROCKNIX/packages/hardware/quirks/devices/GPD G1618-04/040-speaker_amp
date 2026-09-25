@@ -1,0 +1,10 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# The 2025 model's EC only powers the speaker amp after an s2idle resume
+if grep -q 'HX 370' /proc/cpuinfo; then
+  echo 0 >/sys/class/rtc/rtc0/wakealarm
+  echo +2 >/sys/class/rtc/rtc0/wakealarm
+  echo freeze >/sys/power/state
+fi
