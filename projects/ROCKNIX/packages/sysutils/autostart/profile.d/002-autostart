@@ -8,5 +8,11 @@ then
   export QUIRK_DEVICE="$(strings /sys/firmware/devicetree/base/model)"
 else
   export QUIRK_DEVICE="$(tr -d '\0' </sys/class/dmi/id/sys_vendor) $(tr -d '\0' </sys/class/dmi/id/product_name)"
+  # Some product names carry serials or edition suffixes; allow a folder named after the board
+  QUIRK_BOARD="$(tr -d '\0' </sys/class/dmi/id/sys_vendor) $(tr -d '\0' </sys/class/dmi/id/board_name)"
+  if [ ! -d "/usr/lib/autostart/quirks/devices/${QUIRK_DEVICE}" ] && [ -d "/usr/lib/autostart/quirks/devices/${QUIRK_BOARD}" ]; then
+    export QUIRK_DEVICE="${QUIRK_BOARD}"
+  fi
+  unset QUIRK_BOARD
 fi
 export QUIRK_DEVICE="$(echo ${QUIRK_DEVICE} | sed -e "s#[/]#-#g")"
