@@ -46,7 +46,7 @@ modules() {
         [ -e "${LIST}" ] && KEEP="${KEEP} $(cat "${LIST}")"
       done
       if [ -e "/usr/config/modules.bad" ]; then
-        for module in $(cat /usr/config/modules.bad); do
+        for module in $(cat /usr/config/modules.bad /usr/lib/autostart/quirks/devices/"${QUIRK_DEVICE}"/modules.bad 2>/dev/null); do
           case " ${KEEP} " in *" ${module} "*) continue ;; esac
           EXISTS=$(lsmod | grep ${module})
           if [ $? = 0 ]; then
