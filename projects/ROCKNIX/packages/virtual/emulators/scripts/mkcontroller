@@ -5,11 +5,13 @@
 TMPFILE=$(uuidgen)
 OUTFILE=$(uuidgen)
 
-CONTROLLER=$(control-gen | awk 'BEGIN {FS="\""} /^DEVICE/ {print $2;exit}')
-# ES may store the GUID with or without SDL's name CRC (bytes 2-3)
-for GUID in "${CONTROLLER}" "${CONTROLLER:0:4}0000${CONTROLLER:8}"; do
+CONTROLS=$(control-gen)
+CONTROLLER=$(echo "${CONTROLS}" | awk 'BEGIN {FS="\""} /^DEVICE/ {print $2;exit}')
+NAME=$(echo "${CONTROLS}" | awk 'BEGIN {FS="\""} /^param_device/ {print $2;exit}')
+# Match the pad like ES does: GUID, GUID without SDL's name CRC (bytes 2-3), then name
+for MATCH in "@deviceGUID='${CONTROLLER}'" "@deviceGUID='${CONTROLLER:0:4}0000${CONTROLLER:8}'" "@deviceName='${NAME}'"; do
   xmlstarlet sel -t \
-                 -m "/inputList/inputConfig[@deviceGUID='${GUID}']/input" \
+                 -m "(/inputList/inputConfig[${MATCH}])[1]/input" \
                  -v "concat(@name,'|',@type,'|',@id,'|',@value)" \
                  -n /storage/.config/emulationstation/es_input.cfg >/tmp/${TMPFILE}
   [ -s /tmp/${TMPFILE} ] && break
