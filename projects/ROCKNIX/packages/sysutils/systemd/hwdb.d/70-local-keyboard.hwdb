@@ -12,3 +12,10 @@ evdev:input:b0003v2017p1689*
 ###########################################################
 evdev:atkbd:dmi:bvn*:bvr*:bd*:svnAYANEO:pnAIR*:pvr*
  KEYBOARD_KEY_67=power
+
+###########################################################
+# OneXPlayer 2 / 2 Pro (volume keys send Meta+D and Ctrl+Meta+O)
+###########################################################
+evdev:atkbd:dmi:bvn*:bvr*:bd*:svnONE-NETBOOK:pnONEXPLAYER2*:pvr*
+ KEYBOARD_KEY_20=volumeup
+ KEYBOARD_KEY_18=volumedown
