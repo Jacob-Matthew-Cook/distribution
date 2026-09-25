@@ -1,0 +1,11 @@
+# ROG Ally X, ROG Xbox Ally and ROG Xbox Ally X: give the DInput pad xpad button codes
+evdev:input:b0003v0B05p1B4C*
+ KEYBOARD_KEY_90003=btn_x
+ KEYBOARD_KEY_90004=btn_y
+ KEYBOARD_KEY_90005=btn_tl
+ KEYBOARD_KEY_90006=btn_tr
+ KEYBOARD_KEY_90007=btn_select
+ KEYBOARD_KEY_90008=btn_start
+ KEYBOARD_KEY_90009=btn_thumbl
+ KEYBOARD_KEY_9000a=btn_thumbr
+ KEYBOARD_KEY_9000b=btn_mode
