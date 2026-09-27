@@ -234,7 +234,7 @@ new file mode 100644
 +		mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0x48, 0x00);
 +		mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0x9F, 0x00);
 +		mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0xB3, 
-+                0x00, 0xD8, 0x00, 0x1C, 0x00, 0x4C);
++                0x00, 0xD8, 0x00, 0x1C, 0x00, 0x1C);
 +	}
 +	else {
 +		mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0x48, 0x10);
