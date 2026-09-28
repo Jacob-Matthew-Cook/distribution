@@ -42,11 +42,10 @@ smb5-reg.h, not a datasheet.
  #include <linux/types.h>
  #include <linux/workqueue.h>
  
-@@ -137,6 +138,22 @@
- 
+@@ -138,6 +139,22 @@
  #define CMD_ICL_OVERRIDE			0x342
  #define ICL_OVERRIDE_BIT			BIT(0)
-+
+ 
 +/*
 + * BC1.2 source detection enable (APSD). The offset and bit come from downstream
 + * smb5-reg.h (USBIN_OPTIONS_1_CFG_REG / BC1P2_SRC_DETECT_BIT), not a datasheet.
@@ -62,9 +61,10 @@ smb5-reg.h, not a datasheet.
 +#define USBIN_ADAPTER_ALLOW_OVERRIDE		0x344
 +#define ADAPTER_ALLOW_CONTINUOUS		BIT(3)
 +#define ADAPTER_ALLOW_FORCE_NULL		0
- 
++
  #define TYPE_C_CFG				0x358
  #define BC1P2_START_ON_CC_BIT			BIT(7)
+ 
 @@ -255,6 +272,25 @@
  #define SDP_CURRENT_UA			500000
  #define CDP_CURRENT_UA			3000000
@@ -317,31 +317,35 @@ smb5-reg.h, not a datasheet.
  		return;
  
  	for (count = 0; count < 3; count++) {
-@@ -532,6 +764,14 @@
+@@ -532,6 +764,18 @@
  	}
  
  	if (rc < 0) {
 +		int uv = 0, icl_ua = PD_SINK_ICL_UA;
 +
-+		if (++chip->apsd_rounds >= APSD_PD_ROUNDS &&
-+		    (smb5_pd_sink(chip, &uv) || smb5_pd_contract(chip, &icl_ua))) {
-+			smb5_apsd_pd_takeover(chip, uv, icl_ua);
-+			return;
++		if (++chip->apsd_rounds >= APSD_PD_ROUNDS) {
++			/* read the contract first, a 9 V sink would keep the 1.5 A default */
++			bool pd = smb5_pd_contract(chip, &icl_ua);
++
++			if (smb5_pd_sink(chip, &uv) || pd) {
++				smb5_apsd_pd_takeover(chip, uv, icl_ua);
++				return;
++			}
 +		}
 +		/* keep the reruns 1 s apart, a slower rerun lets APSD finish as FLOAT */
  		rc = regmap_update_bits(chip->regmap, chip->base + CMD_APSD,
  					APSD_RERUN_BIT, APSD_RERUN_BIT);
  		schedule_delayed_work(&chip->status_change_work,
-@@ -539,6 +779,8 @@
- 		dev_dbg(chip->dev, "get charger type failed, rerun apsd\n");
+@@ -540,6 +784,8 @@
  		return;
  	}
-+
-+	chip->apsd_rounds = 0;
  
++	chip->apsd_rounds = 0;
++
  	switch (charger_type) {
  	case POWER_SUPPLY_USB_TYPE_CDP:
-@@ -1140,6 +1382,14 @@
+ 		current_ua = CDP_CURRENT_UA;
+@@ -1140,6 +1386,14 @@
  		return dev_err_probe(chip->dev, rc,
  				     "Failed to init status change work\n");
  
