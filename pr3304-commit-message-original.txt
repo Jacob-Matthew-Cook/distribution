@@ -1,0 +1,22 @@
+mmc: retry a failed SD card resume after a power cycle
+
+_mmc_sd_resume() hands its result to mmc_sd_runtime_resume(), which
+logs it and returns 0, so the PM core is told a resume succeeded even
+when the card was never brought back. Every request queued against it
+then hangs forever, and on a boot medium that wedges the machine.
+Retry once from a power cycle instead.
+
+Proven on two cards and two triggers: the GKD Pixel2's boot card still
+busy when the host re-initialises it, and the RG353M's games card
+timing out the optional SD cache-enable write. Both cards are healthy
+and come back on the retry.
+
+A second patch carried here previously made that cache-enable failure
+non-fatal. Hardware testing on 2026-09-11 dropped it: it fired, the
+card was removed anyway by the post-resume presence check, and by
+swallowing the error it stopped the retry from running at all.
+
+99-automount.rules handles ACTION=="remove" so a card that does drop
+off the bus is remounted, instead of the stale mount blocking the add
+rule and leaving /storage/roms empty until reboot.
+
