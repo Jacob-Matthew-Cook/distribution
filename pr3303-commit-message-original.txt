@@ -1,0 +1,34 @@
+dwc2: fix resume crash, suspend hang, and vbus leak on role switch
+
+Three dwc2 fixes plus the userspace role handling that goes with the
+last one. All were root-caused on a GKD Pixel 2 (PX30/RK3326) from
+pstore/ramoops captures.
+
+003, gadget NULL deref on resume: dwc2_restore_device_registers()
+dereferences hsotg->eps_in[i]/eps_out[i] for every endpoint with EPENA
+set, but on cores with dedicated-direction endpoints only one direction
+per endpoint number is allocated, so the opposite slot is NULL. It is
+reachable on every resume where the controller power domain was off
+during suspend.
+
+004, hard hang suspending after a failed core reset: if
+dwc2_core_reset() times out the core never leaves soft reset, and the
+suspend path still backs up the device registers. With the UTMI clock
+domain dead those reads stall the AHB and wedge the CPU with interrupts
+off - no oops, only a watchdog recovers it. Skip the save/restore when
+the reset failed.
+
+035, vbus-supply leaked out of host mode (RK3326): dwc2 releases
+vbus-supply only via _dwc2_hcd_stop()/_dwc2_hcd_suspend() or the
+Connector ID B-device path. A usb-role-switch driven change out of host
+mode takes neither, so the port keeps driving 5V while in device mode.
+Release it when the new role is not host.
+
+usbgadget: single-port boards that also charge through the OTG port
+cannot park in host mode, since dwc2 keeps sourcing 5V and the PMIC
+never sees a charger. Follow the ID pin via the usb2phy's USB-HOST
+extcon instead, gated on the new DEVICE_USB_ROLE_FOLLOW_ID quirk so no
+other device changes behaviour.
+
+Split out of #3220.
+
