@@ -1,0 +1,265 @@
+From: Jacob Cook <jacobmcook1984@gmail.com>
+Subject: [PATCH] sunxi: h616: pick LPDDR3 or LPDDR4 on Anbernic H700 boards
+
+Anbernic ships H700 boards with either memory type. Their stock boot0
+reads PH6 with the pull-up on: high selects LPDDR4, low LPDDR3.
+
+Do the same, set DCDC3 to 1.2 V for LPDDR3 and use that type's
+settings. Builds both timing backends.
+
+The board DT fixed DCDC3 at 1.1 V, so U-Boot proper set it back after
+the SPL. Allow 1.1-1.2 V there to keep the SPL's voltage.
+---
+ ...n50i-h700-anbernic-rg35xx-2024-u-boot.dtsi |  9 +++
+ .../include/asm/arch-sunxi/dram_sun50i_h616.h | 11 +++
+ arch/arm/mach-sunxi/Kconfig                   | 12 ++++
+ arch/arm/mach-sunxi/Makefile                  |  1 +
+ arch/arm/mach-sunxi/dram_sun50i_h616.c        | 18 ++++-
+ .../mach-sunxi/dram_sun50i_h616_anbernic.c    | 67 +++++++++++++++++++
+ arch/arm/mach-sunxi/dram_timings/Makefile     |  1 +
+ 7 files changed, 116 insertions(+), 3 deletions(-)
+ create mode 100644 arch/arm/dts/sun50i-h700-anbernic-rg35xx-2024-u-boot.dtsi
+ create mode 100644 arch/arm/mach-sunxi/dram_sun50i_h616_anbernic.c
+
+diff --git a/arch/arm/dts/sun50i-h700-anbernic-rg35xx-2024-u-boot.dtsi b/arch/arm/dts/sun50i-h700-anbernic-rg35xx-2024-u-boot.dtsi
+new file mode 100644
+index 00000000..4252ebda
+--- /dev/null
++++ b/arch/arm/dts/sun50i-h700-anbernic-rg35xx-2024-u-boot.dtsi
+@@ -0,0 +1,9 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++#include "sunxi-u-boot.dtsi"
++
++/* LPDDR3 boards need 1.2 V; keep the voltage the SPL set */
++&reg_dcdc3 {
++	regulator-min-microvolt = <1100000>;
++	regulator-max-microvolt = <1200000>;
++};
+diff --git a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+index 6dab3b48..970b833f 100644
+--- a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
++++ b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+@@ -185,6 +185,8 @@ const u8 *h616_ddr3_get_phy_init(void);
+ const u8 *h616_lpddr3_get_phy_init(void);
+ const u8 *h616_lpddr4_get_phy_init(void);
+ 
++const struct dram_para *anbernic_dram_para(void);
++
+ static inline void mctl_set_timing_params(const struct dram_para *para)
+ {
+ #ifdef CONFIG_SUNXI_DRAM_H616_DDR3_1333
+@@ -193,6 +195,11 @@ static inline void mctl_set_timing_params(const struct dram_para *para)
+ 	h616_lpddr3_set_timing_params(para);
+ #elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR4)
+ 	h616_lpddr4_set_timing_params(para);
++#elif defined(CONFIG_SUNXI_DRAM_H616_ANBERNIC)
++	if (para->type == SUNXI_DRAM_TYPE_LPDDR3)
++		h616_lpddr3_set_timing_params(para);
++	else
++		h616_lpddr4_set_timing_params(para);
+ #endif
+ }
+ 
+@@ -206,6 +213,10 @@ static inline const u8 *h616_get_phy_init(const struct dram_para *para)
+ 	return h616_lpddr3_get_phy_init();
+ #elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR4)
+ 	return h616_lpddr4_get_phy_init();
++#elif defined(CONFIG_SUNXI_DRAM_H616_ANBERNIC)
++	if (para->type == SUNXI_DRAM_TYPE_LPDDR3)
++		return h616_lpddr3_get_phy_init();
++	return h616_lpddr4_get_phy_init();
+ #endif
+ 	return NULL;
+ }
+diff --git a/arch/arm/mach-sunxi/Kconfig b/arch/arm/mach-sunxi/Kconfig
+index a52a64ea..cf6f8078 100644
+--- a/arch/arm/mach-sunxi/Kconfig
++++ b/arch/arm/mach-sunxi/Kconfig
+@@ -65,16 +65,19 @@ config DRAM_SUN55I_A523
+ if DRAM_SUN50I_H616 || DRAM_SUN50I_A133 || DRAM_SUN55I_A523
+ config DRAM_SUNXI_DX_ODT
+ 	hex "DRAM DX ODT parameter"
++	depends on !SUNXI_DRAM_H616_ANBERNIC
+ 	help
+ 	  DX ODT value from vendor DRAM settings.
+ 
+ config DRAM_SUNXI_DX_DRI
+ 	hex "DRAM DX DRI parameter"
++	depends on !SUNXI_DRAM_H616_ANBERNIC
+ 	help
+ 	  DX DRI value from vendor DRAM settings.
+ 
+ config DRAM_SUNXI_CA_DRI
+ 	hex "DRAM CA DRI parameter"
++	depends on !SUNXI_DRAM_H616_ANBERNIC
+ 	help
+ 	  CA DRI value from vendor DRAM settings.
+ 
+@@ -150,6 +153,7 @@ config DRAM_SUNXI_TPR6
+ 
+ config DRAM_SUNXI_TPR10
+ 	hex "DRAM TPR10 parameter"
++	depends on !SUNXI_DRAM_H616_ANBERNIC
+ 	help
+ 	  TPR10 value from vendor DRAM settings. It tells which features
+ 	  should be configured, like write leveling, read calibration, etc.
+@@ -660,6 +664,14 @@ config SUNXI_DRAM_H616_LPDDR4
+ 	  This option is the LPDDR4 timing used by the stock boot0 by
+ 	  Allwinner.
+ 
++config SUNXI_DRAM_H616_ANBERNIC
++	bool "LPDDR3 or LPDDR4 on Anbernic H700 boards, picked at boot"
++	depends on DRAM_SUN50I_H616 && AXP717_POWER
++	help
++	  Anbernic H700 boards ship with either memory type. Like their
++	  stock boot0, read PH6 with the pull-up on: high is LPDDR4, low
++	  is LPDDR3. Then set the DRAM rail and use that type's settings.
++
+ config SUNXI_DRAM_H616_DDR3_1333
+ 	bool "DDR3-1333 boot0 timings on the H616 DRAM controller"
+ 	select SUNXI_DRAM_DDR3
+diff --git a/arch/arm/mach-sunxi/Makefile b/arch/arm/mach-sunxi/Makefile
+index 9c79b55a..d7d4abf2 100644
+--- a/arch/arm/mach-sunxi/Makefile
++++ b/arch/arm/mach-sunxi/Makefile
+@@ -44,6 +44,7 @@ obj-$(CONFIG_SUNXI_DRAM_DW)	+= dram_timings/
+ obj-$(CONFIG_DRAM_SUN50I_H6)	+= dram_sun50i_h6.o dram_dw_helpers.o
+ obj-$(CONFIG_DRAM_SUN50I_H6)	+= dram_timings/
+ obj-$(CONFIG_DRAM_SUN50I_H616)	+= dram_sun50i_h616.o dram_dw_helpers.o
++obj-$(CONFIG_SUNXI_DRAM_H616_ANBERNIC)	+= dram_sun50i_h616_anbernic.o
+ obj-$(CONFIG_DRAM_SUN50I_H616)	+= dram_timings/
+ obj-$(CONFIG_DRAM_SUN50I_A133)	+= dram_sun50i_a133.o
+ obj-$(CONFIG_DRAM_SUN50I_A133)	+= dram_timings/
+diff --git a/arch/arm/mach-sunxi/dram_sun50i_h616.c b/arch/arm/mach-sunxi/dram_sun50i_h616.c
+index ddb939d2..f58814af 100644
+--- a/arch/arm/mach-sunxi/dram_sun50i_h616.c
++++ b/arch/arm/mach-sunxi/dram_sun50i_h616.c
+@@ -1281,6 +1281,7 @@ bool mctl_core_init(const struct dram_para *para,
+ 	return mctl_ctrl_init(para, config);
+ }
+ 
++#ifndef CONFIG_SUNXI_DRAM_H616_ANBERNIC
+ static const struct dram_para para = {
+ 	.clk = CONFIG_DRAM_CLK,
+ #ifdef CONFIG_SUNXI_DRAM_H616_DDR3_1333
+@@ -1301,20 +1302,31 @@ static const struct dram_para para = {
+ 	.tpr11 = CONFIG_DRAM_SUNXI_TPR11,
+ 	.tpr12 = CONFIG_DRAM_SUNXI_TPR12,
+ };
++#endif
++
++static const struct dram_para *sunxi_dram_para(void)
++{
++#ifdef CONFIG_SUNXI_DRAM_H616_ANBERNIC
++	return anbernic_dram_para();
++#else
++	return &para;
++#endif
++}
+ 
+ unsigned long sunxi_dram_init(void)
+ {
+ 	void *const prcm = (void *)SUNXI_PRCM_BASE;
++	const struct dram_para *p = sunxi_dram_para();
+ 	struct dram_config config;
+ 	unsigned long size;
+ 
+ 	setbits_le32(prcm + CCU_PRCM_RES_CAL_CTRL, BIT(8));
+ 	clrbits_le32(prcm + CCU_PRCM_OHMS240, 0x3f);
+ 
+-	mctl_auto_detect_rank_width(&para, &config);
+-	mctl_auto_detect_dram_size(&para, &config);
++	mctl_auto_detect_rank_width(p, &config);
++	mctl_auto_detect_dram_size(p, &config);
+ 
+-	mctl_core_init(&para, &config);
++	mctl_core_init(p, &config);
+ 
+ 	size = mctl_calc_size(&config);
+ 
+diff --git a/arch/arm/mach-sunxi/dram_sun50i_h616_anbernic.c b/arch/arm/mach-sunxi/dram_sun50i_h616_anbernic.c
+new file mode 100644
+index 00000000..d3612f57
+--- /dev/null
++++ b/arch/arm/mach-sunxi/dram_sun50i_h616_anbernic.c
+@@ -0,0 +1,67 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Anbernic H700 boards ship with LPDDR3 or LPDDR4. Their stock boot0
++ * reads PH6 with the pull-up on: high selects LPDDR4, low LPDDR3.
++ * The DRAM rail, DCDC3, is set for LPDDR4; LPDDR3 needs 1.2 V.
++ */
++
++#include <axp_pmic.h>
++#include <asm/gpio.h>
++#include <asm/arch/dram.h>
++#include <linux/delay.h>
++#include <sunxi_gpio.h>
++
++static const struct dram_para lpddr3_para = {
++	.clk = 672,
++	.type = SUNXI_DRAM_TYPE_LPDDR3,
++	.dx_odt = 0x06060606,
++	.dx_dri = 0x0d0d0d0d,
++	.ca_dri = 0x1919,
++	.odt_en = 0x9988eeee,
++	.tpr2 = 0x1,
++	.tpr6 = 0x2fb08080,
++	.tpr10 = 0x402f4489,
++	.tpr11 = 0x10121013,
++	.tpr12 = 0x0d0e0d0e,
++};
++
++static const struct dram_para lpddr4_para = {
++	.clk = 672,
++	.type = SUNXI_DRAM_TYPE_LPDDR4,
++	.dx_odt = 0x08080808,
++	.dx_dri = 0x0e0e0e0e,
++	.ca_dri = 0x0e0e,
++	.odt_en = 0x7887bbbb,
++	.tpr2 = 0x1,
++	.tpr6 = 0x40808080,
++	.tpr10 = 0x402f6633,
++	.tpr11 = 0x1b1f1e1c,
++	.tpr12 = 0x06060606,
++};
++
++static bool board_has_lpddr3(void)
++{
++	bool low;
++
++	sunxi_gpio_set_cfgpin(SUNXI_GPH(6), SUNXI_GPIO_INPUT);
++	sunxi_gpio_set_pull(SUNXI_GPH(6), SUNXI_GPIO_PULL_UP);
++	mdelay(5);
++	low = !gpio_get_value(SUNXI_GPH(6));
++	sunxi_gpio_set_pull(SUNXI_GPH(6), SUNXI_GPIO_PULL_DISABLE);
++	sunxi_gpio_set_cfgpin(SUNXI_GPH(6), SUNXI_GPIO_DISABLE);
++
++	return low;
++}
++
++const struct dram_para *anbernic_dram_para(void)
++{
++	if (board_has_lpddr3()) {
++		printf(" LPDDR3");
++		if (axp_set_dcdc3(1200))
++			printf(" (failed to set DRAM voltage)");
++		return &lpddr3_para;
++	}
++
++	printf(" LPDDR4");
++	return &lpddr4_para;
++}
+diff --git a/arch/arm/mach-sunxi/dram_timings/Makefile b/arch/arm/mach-sunxi/dram_timings/Makefile
+index 5de9fd5a..a5641569 100644
+--- a/arch/arm/mach-sunxi/dram_timings/Makefile
++++ b/arch/arm/mach-sunxi/dram_timings/Makefile
+@@ -6,6 +6,7 @@ obj-$(CONFIG_SUNXI_DRAM_H6_DDR3_1333)	+= h6_ddr3_1333.o
+ obj-$(CONFIG_SUNXI_DRAM_H616_DDR3_1333)	+= h616_ddr3_1333.o
+ obj-$(CONFIG_SUNXI_DRAM_H616_LPDDR3)	+= h616_lpddr3.o
+ obj-$(CONFIG_SUNXI_DRAM_H616_LPDDR4)	+= h616_lpddr4_2133.o
++obj-$(CONFIG_SUNXI_DRAM_H616_ANBERNIC)	+= h616_lpddr3.o h616_lpddr4_2133.o
+ obj-$(CONFIG_SUNXI_DRAM_A133_DDR4)	+= a133_ddr4.o
+ obj-$(CONFIG_SUNXI_DRAM_A133_LPDDR4)	+= a133_lpddr4.o
+ obj-$(CONFIG_SUNXI_DRAM_A523_DDR3)	+= a523_ddr3.o

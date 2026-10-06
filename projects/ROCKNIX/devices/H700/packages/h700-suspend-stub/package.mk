@@ -14,29 +14,23 @@ PKG_TOOLCHAIN="manual"
 # The DRAM sources are U-Boot's own, taken from the bootloader package's
 # unpacked tree. Source only: a target dependency here would close the loop
 # u-boot -> atf -> suspend-stub -> u-boot.
-PKG_DEPENDS_UNPACK="u-boot-DDR4 u-boot-DDR3 atf"
-PKG_NEED_UNPACK="$(get_pkg_directory u-boot-DDR4) $(get_pkg_directory u-boot-DDR3) $(get_pkg_directory atf)"
+PKG_DEPENDS_UNPACK="u-boot atf"
+PKG_NEED_UNPACK="$(get_pkg_directory u-boot) $(get_pkg_directory atf)"
 
-# One stub per memory type; BL31 picks the match at boot. <bootloader package>:<output>
-PKG_STUB_VARIANTS="u-boot-DDR4:suspend_stub_lpddr4.bin \
-                   u-boot-DDR3:suspend_stub_lpddr3.bin"
+# One stub per memory type; BL31 picks the match at boot. <u-boot defconfig>:<output>
+PKG_STUB_VARIANTS="anbernic_rg35xx_h700_lpddr4_defconfig:suspend_stub_lpddr4.bin \
+                   anbernic_rg35xx_h700_lpddr3_defconfig:suspend_stub_lpddr3.bin"
 
 make_target() {
-  local variant uboot out dir defconfig key
+  local variant out dir defconfig key
 
   : >${PKG_BUILD}/.stub-keys
   for variant in ${PKG_STUB_VARIANTS}; do
-    uboot="${variant%:*}"; out="${variant##*:}"; dir="${PKG_BUILD}/${out%.bin}"
-
-    # the defconfig comes from the bootloader package so the two can never disagree
-    defconfig="$(sed -n 's/^[[:space:]]*PKG_UBOOT_CONFIG="\([^"]*\)".*/\1/p' \
-                   "$(get_pkg_directory ${uboot})/package.mk" | head -1)"
-    [ -n "${defconfig}" ] || die "suspend-stub: no PKG_UBOOT_CONFIG in ${uboot}"
-    defconfig="$(get_build_dir ${uboot})/configs/${defconfig}"
+    defconfig="$(get_build_dir u-boot)/configs/${variant%:*}"; out="${variant##*:}"; dir="${PKG_BUILD}/${out%.bin}"
     [ -r "${defconfig}" ] || die "suspend-stub: ${defconfig} not found"
 
     mkdir -p ${dir}
-    make -C ${dir} -f ${PKG_BUILD}/Makefile SRC_DIR=${PKG_BUILD} UBOOT_DIR=$(get_build_dir ${uboot}) \
+    make -C ${dir} -f ${PKG_BUILD}/Makefile SRC_DIR=${PKG_BUILD} UBOOT_DIR=$(get_build_dir u-boot) \
       ATF_DIR=$(get_build_dir atf) DEFCONFIG=${defconfig} OUT=${out} CROSS_COMPILE=${TARGET_KERNEL_PREFIX}
 
     # TF-A matches on (type, clk); two stubs sharing both would be picked arbitrarily

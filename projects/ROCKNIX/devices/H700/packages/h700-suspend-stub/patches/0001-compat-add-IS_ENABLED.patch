@@ -1,0 +1,22 @@
+From: Jacob Cook <jacobmcook1984@gmail.com>
+Subject: [PATCH] compat: add IS_ENABLED()
+
+U-Boot's H616 timing files use IS_ENABLED() since the per-type PHY
+init helpers moved there.
+---
+--- a/compat/stub_compat.h
++++ b/compat/stub_compat.h
+@@ -26,6 +26,13 @@ typedef unsigned long ulong;
+ 
+ #define debug(...)		do { } while (0)
+ 
++/* IS_ENABLED() from linux/kconfig.h; board.h defines enabled bools as 1 */
++#define __ARG_PLACEHOLDER_1	0,
++#define __take_second_arg(__ignored, val, ...) val
++#define ____is_defined(arg1_or_junk) __take_second_arg(arg1_or_junk 1, 0)
++#define ___is_defined(val)	____is_defined(__ARG_PLACEHOLDER_##val)
++#define IS_ENABLED(option)	___is_defined(option)
++
+ #define CFG_SYS_SDRAM_BASE	0x40000000UL
+ 
+ void *memcpy(void *dst, const void *src, size_t n);

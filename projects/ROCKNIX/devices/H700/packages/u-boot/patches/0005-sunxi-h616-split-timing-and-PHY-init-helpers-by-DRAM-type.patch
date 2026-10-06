@@ -1,0 +1,150 @@
+From: James Hilliard <james.hilliard1@gmail.com>
+Date: Fri, 27 Mar 2026 14:09:14 -0600
+Subject: [PATCH v4 3/5] sunxi: h616: split timing and PHY init helpers by DRAM type
+
+Give each H616 timing file its own timing entry point and PHY
+initialisation accessor, then dispatch to them through inline
+helpers in the H616 header.
+
+This keeps the current fixed-profile build model intact while
+making the common H616 code consume DRAM-type-specific helpers
+through a uniform interface.
+
+Signed-off-by: James Hilliard <james.hilliard1@gmail.com>
+Link: https://patchwork.ozlabs.org/project/uboot/patch/20260327200932.2016910-3-james.hilliard1@gmail.com/
+---
+ .../include/asm/arch-sunxi/dram_sun50i_h616.h | 34 +++++++++++++++++--
+ arch/arm/mach-sunxi/dram_sun50i_h616.c        |  1 +
+ .../mach-sunxi/dram_timings/h616_ddr3_1333.c  | 12 ++++---
+ .../arm/mach-sunxi/dram_timings/h616_lpddr3.c | 12 ++++---
+ .../dram_timings/h616_lpddr4_2133.c           | 12 ++++---
+ 5 files changed, 57 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+index fa12d5d2685..6dab3b4832b 100644
+--- a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
++++ b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+@@ -177,7 +177,37 @@ static inline int ns_to_t(const struct dram_para *para, int nanoseconds)
+ 	return DIV_ROUND_UP(ctrl_freq * nanoseconds, 1000);
+ }
+ 
+-extern const u8 *phy_init;
+-void mctl_set_timing_params(const struct dram_para *para);
++void h616_ddr3_set_timing_params(const struct dram_para *para);
++void h616_lpddr3_set_timing_params(const struct dram_para *para);
++void h616_lpddr4_set_timing_params(const struct dram_para *para);
++
++const u8 *h616_ddr3_get_phy_init(void);
++const u8 *h616_lpddr3_get_phy_init(void);
++const u8 *h616_lpddr4_get_phy_init(void);
++
++static inline void mctl_set_timing_params(const struct dram_para *para)
++{
++#ifdef CONFIG_SUNXI_DRAM_H616_DDR3_1333
++	h616_ddr3_set_timing_params(para);
++#elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR3)
++	h616_lpddr3_set_timing_params(para);
++#elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR4)
++	h616_lpddr4_set_timing_params(para);
++#endif
++}
++
++static inline const u8 *h616_get_phy_init(const struct dram_para *para)
++{
++	(void)para;
++
++#ifdef CONFIG_SUNXI_DRAM_H616_DDR3_1333
++	return h616_ddr3_get_phy_init();
++#elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR3)
++	return h616_lpddr3_get_phy_init();
++#elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR4)
++	return h616_lpddr4_get_phy_init();
++#endif
++	return NULL;
++}
+ 
+ #endif /* _SUNXI_DRAM_SUN50I_H616_H */
+diff --git a/arch/arm/mach-sunxi/dram_sun50i_h616.c b/arch/arm/mach-sunxi/dram_sun50i_h616.c
+index 5ee1ca25311..c3e1286fb35 100644
+--- a/arch/arm/mach-sunxi/dram_sun50i_h616.c
++++ b/arch/arm/mach-sunxi/dram_sun50i_h616.c
+@@ -869,6 +869,7 @@ static bool mctl_phy_init(const struct dram_para *para,
+ 			(struct sunxi_mctl_com_reg *)SUNXI_DRAM_COM_BASE;
+ 	struct sunxi_mctl_ctl_reg * const mctl_ctl =
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;
++	const u8 *phy_init = h616_get_phy_init(para);
+ 	u32 val, val2, *ptr, mr0, mr2;
+ 	int i;
+ 
+diff --git a/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c b/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c
+index f367f604d5f..20c90f20cb9 100644
+--- a/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c
++++ b/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c
+@@ -28,11 +28,15 @@ static const u8 h616_ddr3_phy_init_addr_map_1[H616_PHY_INIT_LEN] = {
+ 	0x06, 0x09, 0x0f
+ };
+ 
+-const u8 *phy_init = IS_ENABLED(CONFIG_DRAM_SUNXI_PHY_ADDR_MAP_1) ?
+-		     h616_ddr3_phy_init_addr_map_1 :
+-		     h616_ddr3_phy_init_default;
++const u8 *h616_ddr3_get_phy_init(void)
++{
++	if (IS_ENABLED(CONFIG_DRAM_SUNXI_PHY_ADDR_MAP_1))
++		return h616_ddr3_phy_init_addr_map_1;
++
++	return h616_ddr3_phy_init_default;
++}
+ 
+-void mctl_set_timing_params(const struct dram_para *para)
++void h616_ddr3_set_timing_params(const struct dram_para *para)
+ {
+ 	struct sunxi_mctl_ctl_reg * const mctl_ctl =
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;
+diff --git a/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c b/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c
+index 7efb1b22a84..23b29cc973c 100644
+--- a/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c
++++ b/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c
+@@ -28,11 +28,15 @@ static const u8 h616_lpddr3_phy_init_addr_map_1[H616_PHY_INIT_LEN] = {
+ 	0x08, 0x01, 0x1a
+ };
+ 
+-const u8 *phy_init = IS_ENABLED(CONFIG_DRAM_SUNXI_PHY_ADDR_MAP_1) ?
+-		     h616_lpddr3_phy_init_addr_map_1 :
+-		     h616_lpddr3_phy_init_default;
++const u8 *h616_lpddr3_get_phy_init(void)
++{
++	if (IS_ENABLED(CONFIG_DRAM_SUNXI_PHY_ADDR_MAP_1))
++		return h616_lpddr3_phy_init_addr_map_1;
++
++	return h616_lpddr3_phy_init_default;
++}
+ 
+-void mctl_set_timing_params(const struct dram_para *para)
++void h616_lpddr3_set_timing_params(const struct dram_para *para)
+ {
+ 	struct sunxi_mctl_ctl_reg * const mctl_ctl =
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;
+diff --git a/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c b/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c
+index 055d8dd3cad..c19ae025f75 100644
+--- a/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c
++++ b/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c
+@@ -26,11 +26,15 @@ static const u8 h616_lpddr4_phy_init_addr_map_1[H616_PHY_INIT_LEN] = {
+ 	0x18, 0x04, 0x1a
+ };
+ 
+-const u8 *phy_init = IS_ENABLED(CONFIG_DRAM_SUNXI_PHY_ADDR_MAP_1) ?
+-		     h616_lpddr4_phy_init_addr_map_1 :
+-		     h616_lpddr4_phy_init_default;
++const u8 *h616_lpddr4_get_phy_init(void)
++{
++	if (IS_ENABLED(CONFIG_DRAM_SUNXI_PHY_ADDR_MAP_1))
++		return h616_lpddr4_phy_init_addr_map_1;
++
++	return h616_lpddr4_phy_init_default;
++}
+ 
+-void mctl_set_timing_params(const struct dram_para *para)
++void h616_lpddr4_set_timing_params(const struct dram_para *para)
+ {
+ 	struct sunxi_mctl_ctl_reg * const mctl_ctl =
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;

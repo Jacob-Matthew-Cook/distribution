@@ -1,0 +1,182 @@
+From: James Hilliard <james.hilliard1@gmail.com>
+Date: Fri, 27 Mar 2026 14:09:12 -0600
+Subject: [PATCH v4 1/5] sunxi: h616: make ns_to_t() use the DRAM clock
+
+Pass struct dram_para into ns_to_t() and derive the controller
+clock from para->clk instead of CONFIG_DRAM_CLK.
+
+This prepares the H616 timing code for selecting the DRAM
+backend from runtime parameters instead of a fixed build-time
+clock setting.
+
+Signed-off-by: James Hilliard <james.hilliard1@gmail.com>
+Link: https://patchwork.ozlabs.org/project/uboot/patch/20260327200932.2016910-1-james.hilliard1@gmail.com/
+---
+ .../include/asm/arch-sunxi/dram_sun50i_h616.h |  4 +--
+ .../mach-sunxi/dram_timings/h616_ddr3_1333.c  | 30 +++++++++----------
+ .../arm/mach-sunxi/dram_timings/h616_lpddr3.c | 30 +++++++++----------
+ .../dram_timings/h616_lpddr4_2133.c           | 30 +++++++++----------
+ 4 files changed, 47 insertions(+), 47 deletions(-)
+
+diff --git a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+index a8fdda124a0..c35ef0252cb 100644
+--- a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
++++ b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+@@ -168,9 +168,9 @@ struct dram_config {
+ 	u8 bus_full_width;
+ };
+ 
+-static inline int ns_to_t(int nanoseconds)
++static inline int ns_to_t(const struct dram_para *para, int nanoseconds)
+ {
+-	const unsigned int ctrl_freq = CONFIG_DRAM_CLK / 2;
++	const unsigned int ctrl_freq = para->clk / 2;
+ 
+ 	return DIV_ROUND_UP(ctrl_freq * nanoseconds, 1000);
+ }
+diff --git a/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c b/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c
+index 3faf8d5bd97..1f0d0de198c 100644
+--- a/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c
++++ b/arch/arm/mach-sunxi/dram_timings/h616_ddr3_1333.c
+@@ -20,27 +20,27 @@ void mctl_set_timing_params(const struct dram_para *para)
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;
+ 
+ 	u8 tccd		= 2;			/* JEDEC: 4nCK */
+-	u8 tfaw		= ns_to_t(50);		/* JEDEC: 30 ns w/ 1K pages */
+-	u8 trrd		= max(ns_to_t(6), 4);	/* JEDEC: max(6 ns, 4nCK) */
+-	u8 trcd		= ns_to_t(15);		/* JEDEC: 13.5 ns */
+-	u8 trc		= ns_to_t(53);		/* JEDEC: 49.5 ns */
+-	u8 txp		= max(ns_to_t(6), 3);	/* JEDEC: max(6 ns, 3nCK) */
+-	u8 trtp		= max(ns_to_t(8), 2);	/* JEDEC: max(7.5 ns, 4nCK) */
+-	u8 trp		= ns_to_t(15);		/* JEDEC: >= 13.75 ns */
+-	u8 tras		= ns_to_t(38);		/* JEDEC >= 36 ns, <= 9*trefi */
+-	u16 trefi	= ns_to_t(7800) / 32;	/* JEDEC: 7.8us@Tcase <= 85C */
+-	u16 trfc	= ns_to_t(350);		/* JEDEC: 160 ns for 2Gb */
++	u8 tfaw		= ns_to_t(para, 50);	/* JEDEC: 30 ns w/ 1K pages */
++	u8 trrd		= max(ns_to_t(para, 6), 4); /* JEDEC: max(6 ns, 4nCK) */
++	u8 trcd		= ns_to_t(para, 15);	/* JEDEC: 13.5 ns */
++	u8 trc		= ns_to_t(para, 53);	/* JEDEC: 49.5 ns */
++	u8 txp		= max(ns_to_t(para, 6), 3); /* JEDEC: max(6 ns, 3nCK) */
++	u8 trtp		= max(ns_to_t(para, 8), 2); /* JEDEC: max(7.5 ns, 4nCK) */
++	u8 trp		= ns_to_t(para, 15);	/* JEDEC: >= 13.75 ns */
++	u8 tras		= ns_to_t(para, 38);	/* JEDEC >= 36 ns, <= 9*trefi */
++	u16 trefi	= ns_to_t(para, 7800) / 32; /* JEDEC: 7.8us@Tcase <= 85C */
++	u16 trfc	= ns_to_t(para, 350);	/* JEDEC: 160 ns for 2Gb */
+ 	u16 txsr	= 4;			/* ? */
+ 
+ 	u8 tmrw		= 0;			/* ? */
+ 	u8 tmrd		= 4;			/* JEDEC: 4nCK */
+-	u8 tmod		= max(ns_to_t(15), 12);	/* JEDEC: max(15 ns, 12nCK) */
+-	u8 tcke		= max(ns_to_t(6), 3);	/* JEDEC: max(5.625 ns, 3nCK) */
+-	u8 tcksrx	= max(ns_to_t(10), 4);	/* JEDEC: max(10 ns, 5nCK) */
+-	u8 tcksre	= max(ns_to_t(10), 4);	/* JEDEC: max(10 ns, 5nCK) */
++	u8 tmod		= max(ns_to_t(para, 15), 12); /* JEDEC: max(15 ns, 12nCK) */
++	u8 tcke		= max(ns_to_t(para, 6), 3); /* JEDEC: max(5.625 ns, 3nCK) */
++	u8 tcksrx	= max(ns_to_t(para, 10), 4); /* JEDEC: max(10 ns, 5nCK) */
++	u8 tcksre	= max(ns_to_t(para, 10), 4); /* JEDEC: max(10 ns, 5nCK) */
+ 	u8 tckesr	= tcke + 1;		/* JEDEC: tCKE(min) + 1nCK */
+ 	u8 trasmax	= (para->clk / 2) / 15;	/* JEDEC: tREFI * 9 */
+-	u8 txs		= ns_to_t(360) / 32;	/* JEDEC: max(5nCK,tRFC+10ns) */
++	u8 txs		= ns_to_t(para, 360) / 32; /* JEDEC: max(5nCK,tRFC+10ns) */
+ 	u8 txsdll	= 16;			/* JEDEC: 512 nCK */
+ 	u8 txsabort	= 4;			/* ? */
+ 	u8 txsfast	= 4;			/* ? */
+diff --git a/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c b/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c
+index ce2ffa7a020..e753fd7b4af 100644
+--- a/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c
++++ b/arch/arm/mach-sunxi/dram_timings/h616_lpddr3.c
+@@ -20,27 +20,27 @@ void mctl_set_timing_params(const struct dram_para *para)
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;
+ 
+ 	u8 tccd		= 2;
+-	u8 tfaw		= ns_to_t(50);
+-	u8 trrd		= max(ns_to_t(6), 4);
+-	u8 trcd		= ns_to_t(24);
+-	u8 trc		= ns_to_t(70);
+-	u8 txp		= max(ns_to_t(8), 3);
+-	u8 trtp		= max(ns_to_t(8), 2);
+-	u8 trp		= ns_to_t(27);
+-	u8 tras		= ns_to_t(41);
+-	u16 trefi	= ns_to_t(7800) / 64;
+-	u16 trfc	= ns_to_t(210);
++	u8 tfaw		= ns_to_t(para, 50);
++	u8 trrd		= max(ns_to_t(para, 6), 4);
++	u8 trcd		= ns_to_t(para, 24);
++	u8 trc		= ns_to_t(para, 70);
++	u8 txp		= max(ns_to_t(para, 8), 3);
++	u8 trtp		= max(ns_to_t(para, 8), 2);
++	u8 trp		= ns_to_t(para, 27);
++	u8 tras		= ns_to_t(para, 41);
++	u16 trefi	= ns_to_t(para, 7800) / 64;
++	u16 trfc	= ns_to_t(para, 210);
+ 	u16 txsr	= 88;
+ 
+ 	u8 tmrw		= 5;
+ 	u8 tmrd		= 5;
+-	u8 tmod		= max(ns_to_t(15), 12);
+-	u8 tcke		= max(ns_to_t(6), 3);
+-	u8 tcksrx	= max(ns_to_t(12), 4);
+-	u8 tcksre	= max(ns_to_t(12), 4);
++	u8 tmod		= max(ns_to_t(para, 15), 12);
++	u8 tcke		= max(ns_to_t(para, 6), 3);
++	u8 tcksrx	= max(ns_to_t(para, 12), 4);
++	u8 tcksre	= max(ns_to_t(para, 12), 4);
+ 	u8 tckesr	= tcke + 2;
+ 	u8 trasmax	= (para->clk / 2) / 16;
+-	u8 txs		= ns_to_t(360) / 32;
++	u8 txs		= ns_to_t(para, 360) / 32;
+ 	u8 txsdll	= 16;
+ 	u8 txsabort	= 4;
+ 	u8 txsfast	= 4;
+diff --git a/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c b/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c
+index 6f5c4acbd62..bbe401464eb 100644
+--- a/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c
++++ b/arch/arm/mach-sunxi/dram_timings/h616_lpddr4_2133.c
+@@ -18,24 +18,24 @@ void mctl_set_timing_params(const struct dram_para *para)
+ 			(struct sunxi_mctl_ctl_reg *)SUNXI_DRAM_CTL0_BASE;
+ 
+ 	u8 tccd		= 4;
+-	u8 tfaw		= ns_to_t(40);
+-	u8 trrd		= max(ns_to_t(10), 2);
+-	u8 trcd		= max(ns_to_t(18), 2);
+-	u8 trc		= ns_to_t(65);
+-	u8 txp		= max(ns_to_t(8), 2);
++	u8 tfaw		= ns_to_t(para, 40);
++	u8 trrd		= max(ns_to_t(para, 10), 2);
++	u8 trcd		= max(ns_to_t(para, 18), 2);
++	u8 trc		= ns_to_t(para, 65);
++	u8 txp		= max(ns_to_t(para, 8), 2);
+ 	u8 trtp		= 4;
+-	u8 trp		= ns_to_t(21);
+-	u8 tras		= ns_to_t(42);
+-	u16 trefi	= ns_to_t(3904) / 32;
+-	u16 trfc	= ns_to_t(280);
+-	u16 txsr	= ns_to_t(190);
++	u8 trp		= ns_to_t(para, 21);
++	u8 tras		= ns_to_t(para, 42);
++	u16 trefi	= ns_to_t(para, 3904) / 32;
++	u16 trfc	= ns_to_t(para, 280);
++	u16 txsr	= ns_to_t(para, 190);
+ 
+-	u8 tmrw		= max(ns_to_t(14), 5);
++	u8 tmrw		= max(ns_to_t(para, 14), 5);
+ 	u8 tmrd		= tmrw;
+ 	u8 tmod		= 12;
+-	u8 tcke		= max(ns_to_t(15), 2);
+-	u8 tcksrx	= max(ns_to_t(2), 2);
+-	u8 tcksre	= max(ns_to_t(5), 2);
++	u8 tcke		= max(ns_to_t(para, 15), 2);
++	u8 tcksrx	= max(ns_to_t(para, 2), 2);
++	u8 tcksre	= max(ns_to_t(para, 5), 2);
+ 	u8 tckesr	= tcke;
+ 	u8 trasmax	= (trefi * 9) / 32;
+ 	u8 txs		= 4;
+@@ -49,7 +49,7 @@ void mctl_set_timing_params(const struct dram_para *para)
+ 
+ 	u8 twtp		= 24;
+ 	u8 twr2rd	= max(trrd, (u8)4) + 14;
+-	u8 trd2wr	= (ns_to_t(4) + 17) - ns_to_t(1);
++	u8 trd2wr	= (ns_to_t(para, 4) + 17) - ns_to_t(para, 1);
+ 
+ 	/* set DRAM timing */
+ 	writel((twtp << 24) | (tfaw << 16) | (trasmax << 8) | tras,

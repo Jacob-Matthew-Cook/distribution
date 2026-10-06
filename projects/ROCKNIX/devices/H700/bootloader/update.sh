@@ -31,29 +31,10 @@ if [ -f "$UPDATE_DTB_SOURCE" ]; then
   cp -f "$UPDATE_DTB_SOURCE" "$BOOT_ROOT/dtb.img"
 fi
 
-# detect DDR3/DDR4
-for r in /sys/class/regulator/regulator.*/; do
-  [[ "$(cat "$r/name" 2>/dev/null)" == "vdd-dram" ]] && VDD_REG_PATH=$r
-done
-
-if [ -n "${VDD_REG_PATH:-}" ]; then
-  DCDC3_MICROVOLTS=$(cat "$VDD_REG_PATH/microvolts")
-  case "$DCDC3_MICROVOLTS" in
-    1200000)
-      UBOOT_BIN="H700_DDR3_u-boot-sunxi-with-spl.bin"
-      ;;
-    1100000)
-      UBOOT_BIN="H700_DDR4_u-boot-sunxi-with-spl.bin"
-      ;;
-  esac
-fi
-
 # update bootloader
-if [ -n "${UBOOT_BIN:-}" ]; then
-  if [ -f $SYSTEM_ROOT/usr/share/bootloader/$UBOOT_BIN ]; then
-    echo "Updating u-boot on: $BOOT_DISK..."
-    dd if=$SYSTEM_ROOT/usr/share/bootloader/$UBOOT_BIN of=$BOOT_DISK bs=1K seek=8 conv=fsync,notrunc &>/dev/null
-  fi
+if [ -f $SYSTEM_ROOT/usr/share/bootloader/u-boot-sunxi-with-spl.bin ]; then
+  echo "Updating u-boot on: $BOOT_DISK..."
+  dd if=$SYSTEM_ROOT/usr/share/bootloader/u-boot-sunxi-with-spl.bin of=$BOOT_DISK bs=1K seek=8 conv=fsync,notrunc &>/dev/null
 fi
 
 # mount $BOOT_ROOT ro
