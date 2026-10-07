@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
+
+#include "sunxi-u-boot.dtsi"
+
+/* LPDDR3 needs 1.2 V; the board DT fixes vdd-dram at 1.1 V */
+&reg_dcdc3 {
+	regulator-min-microvolt = <1200000>;
+	regulator-max-microvolt = <1200000>;
+};
