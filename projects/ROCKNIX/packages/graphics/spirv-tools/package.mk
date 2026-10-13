@@ -7,4 +7,5 @@
 # core builds the target side static with the tools, we want only the shared library
 PKG_CMAKE_OPTS_TARGET="-DSPIRV_SKIP_TESTS=ON \
                        -DSPIRV_SKIP_EXECUTABLES=ON \
-                       -DBUILD_SHARED_LIBS=ON"
+                       -DBUILD_SHARED_LIBS=ON \
+                       -DSPIRV_WERROR=OFF"
