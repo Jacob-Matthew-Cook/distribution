@@ -1,0 +1,109 @@
+From 53ac1dd3c56579415bad50f1af3f7a1a7ab97c2e Mon Sep 17 00:00:00 2001
+From: Jacob Cook <jacobmcook1984@gmail.com>
+Date: Wed, 14 Oct 2026 23:42:47 -0400
+Subject: [PATCH] drm/msm/dpu: TEST ONLY: add inline rotation offset tunables
+
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c | 64 ++++++++++++++++++++---
+ 1 file changed, 58 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
+index 1620913..22f646f 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
+@@ -57,6 +57,27 @@
+ 
+ #define DEFAULT_REFRESH_RATE	60
+ 
++/* TEST ONLY: tunables for the 8 px inline rotation offset on SM8550 */
++static int dpu_rot_src_y;
++module_param_named(rot_src_y, dpu_rot_src_y, int, 0644);
++MODULE_PARM_DESC(rot_src_y, "TEST: move the inline rotation source window down by this many lines, up to the 16-line padding");
++
++static bool dpu_rot_pad_src;
++module_param_named(rot_pad_src, dpu_rot_pad_src, bool, 0644);
++MODULE_PARM_DESC(rot_pad_src, "TEST: fetch the 16-line aligned source height for inline rotation");
++
++static bool dpu_rot_width_check;
++module_param_named(rot_width_check, dpu_rot_width_check, bool, 0644);
++MODULE_PARM_DESC(rot_width_check, "TEST: reject inline rotation when the source width is over rot_maxheight, as mainline does");
++
++static bool dpu_rot_no_reflect;
++module_param_named(rot_no_reflect, dpu_rot_no_reflect, bool, 0644);
++MODULE_PARM_DESC(rot_no_reflect, "TEST: skip the REFLECT_X|Y added to rot90 (picture is upside down)");
++
++static bool dpu_rot_debug;
++module_param_named(rot_debug, dpu_rot_debug, bool, 0644);
++MODULE_PARM_DESC(rot_debug, "TEST: log the rects programmed for inline rotation");
++
+ static const uint32_t qcom_compressed_supported_formats[] = {
+ 	DRM_FORMAT_ABGR8888,
+ 	DRM_FORMAT_ARGB8888,
+@@ -740,6 +761,10 @@ static int dpu_plane_check_inline_rotation(struct dpu_plane *pdpu,
+ 		return -EINVAL;
+ 	}
+ 
++	if (dpu_rot_width_check &&
++	    drm_rect_width(&src) > sblk->rotation_cfg->rot_maxheight)
++		return -EINVAL;
++
+ 	supported_formats = sblk->rotation_cfg->rot_format_list;
+ 	num_formats = sblk->rotation_cfg->rot_num_formats;
+ 
+@@ -788,7 +813,7 @@ static int dpu_plane_atomic_check_pipe(struct dpu_plane *pdpu,
+ 	pipe_cfg->rotation = drm_rotation_simplify(new_plane_state->rotation,
+ 						   supported_rotations);
+ 
+-	if (pipe_cfg->rotation & DRM_MODE_ROTATE_90)
++	if ((pipe_cfg->rotation & DRM_MODE_ROTATE_90) && !dpu_rot_no_reflect)
+ 		pipe_cfg->rotation ^= DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y;
+ 
+ 	min_src_size = MSM_FORMAT_IS_YUV(fmt) ? 2 : 1;
+@@ -1527,12 +1552,39 @@ static void dpu_plane_sspp_update_pipe(struct drm_plane *plane,
+ 		return;
+ 	}
+ 
+-	if (pipe->sspp->ops.setup_rects) {
+-		pipe->sspp->ops.setup_rects(pipe,
+-				pipe_cfg);
+-	}
++	if ((pipe_cfg->rotation & DRM_MODE_ROTATE_90) &&
++	    (drm_rect_height(&pipe_cfg->src_rect) % 16)) {
++		struct dpu_sw_pipe_cfg rot_cfg = *pipe_cfg;
++		int h = drm_rect_height(&pipe_cfg->src_rect);
++		int pad = ALIGN(h, 16) - h;
+ 
+-	_dpu_plane_setup_scaler(pipe, fmt, false, pipe_cfg);
++		if (dpu_rot_pad_src) {
++			rot_cfg.src_rect.y2 += pad;
++		} else {
++			int y = clamp(dpu_rot_src_y, 0, pad);
++
++			rot_cfg.src_rect.y1 += y;
++			rot_cfg.src_rect.y2 += y;
++		}
++
++		if (dpu_rot_debug)
++			pr_info_ratelimited("dpu rot: sspp %d src " DRM_RECT_FMT " dst " DRM_RECT_FMT " rot 0x%x\n",
++					    pipe->sspp->idx - SSPP_NONE,
++					    DRM_RECT_ARG(&rot_cfg.src_rect),
++					    DRM_RECT_ARG(&rot_cfg.dst_rect),
++					    rot_cfg.rotation);
++
++		if (pipe->sspp->ops.setup_rects)
++			pipe->sspp->ops.setup_rects(pipe, &rot_cfg);
++		_dpu_plane_setup_scaler(pipe, fmt, false, &rot_cfg);
++	} else {
++		if (pipe->sspp->ops.setup_rects) {
++			pipe->sspp->ops.setup_rects(pipe,
++					pipe_cfg);
++		}
++
++		_dpu_plane_setup_scaler(pipe, fmt, false, pipe_cfg);
++	}
+ 
+ 	if (pipe->sspp->ops.setup_multirect)
+ 		pipe->sspp->ops.setup_multirect(
+-- 
+2.43.0
+
