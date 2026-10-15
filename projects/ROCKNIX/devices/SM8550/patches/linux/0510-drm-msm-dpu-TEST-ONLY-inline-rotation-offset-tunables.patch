@@ -1,17 +1,17 @@
-From 53ac1dd3c56579415bad50f1af3f7a1a7ab97c2e Mon Sep 17 00:00:00 2001
+From bff8f3d737601ea786a11463917e5981fe9dd8b3 Mon Sep 17 00:00:00 2001
 From: Jacob Cook <jacobmcook1984@gmail.com>
 Date: Wed, 14 Oct 2026 23:42:47 -0400
 Subject: [PATCH] drm/msm/dpu: TEST ONLY: add inline rotation offset tunables
 
 ---
- drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c | 64 ++++++++++++++++++++---
- 1 file changed, 58 insertions(+), 6 deletions(-)
+ drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c | 82 +++++++++++++++++++++--
+ 1 file changed, 75 insertions(+), 7 deletions(-)
 
 diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
-index 1620913..22f646f 100644
+index 1620913..ab5dbad 100644
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
-@@ -57,6 +57,27 @@
+@@ -57,6 +57,39 @@
  
  #define DEFAULT_REFRESH_RATE	60
  
@@ -32,6 +32,18 @@ index 1620913..22f646f 100644
 +module_param_named(rot_no_reflect, dpu_rot_no_reflect, bool, 0644);
 +MODULE_PARM_DESC(rot_no_reflect, "TEST: skip the REFLECT_X|Y added to rot90 (picture is upside down)");
 +
++static bool dpu_rot_no_scaler;
++module_param_named(rot_no_scaler, dpu_rot_no_scaler, bool, 0644);
++MODULE_PARM_DESC(rot_no_scaler, "TEST: skip the scaler for unscaled inline rotation, as mainline does");
++
++static int dpu_rot_preload_x = -1;
++module_param_named(rot_preload_x, dpu_rot_preload_x, int, 0644);
++MODULE_PARM_DESC(rot_preload_x, "TEST: scaler horizontal preload for inline rotation (-1 = default)");
++
++static int dpu_rot_preload_y = -1;
++module_param_named(rot_preload_y, dpu_rot_preload_y, int, 0644);
++MODULE_PARM_DESC(rot_preload_y, "TEST: scaler vertical preload for inline rotation (-1 = default)");
++
 +static bool dpu_rot_debug;
 +module_param_named(rot_debug, dpu_rot_debug, bool, 0644);
 +MODULE_PARM_DESC(rot_debug, "TEST: log the rects programmed for inline rotation");
@@ -39,7 +51,22 @@ index 1620913..22f646f 100644
  static const uint32_t qcom_compressed_supported_formats[] = {
  	DRM_FORMAT_ABGR8888,
  	DRM_FORMAT_ARGB8888,
-@@ -740,6 +761,10 @@ static int dpu_plane_check_inline_rotation(struct dpu_plane *pdpu,
+@@ -483,9 +516,13 @@ static void _dpu_plane_setup_scaler3(struct dpu_hw_sspp *pipe_hw,
+ 			scale_cfg->preload_x[i] = DPU_QSEED3_DEFAULT_PRELOAD_H;
+ 			scale_cfg->preload_y[i] = DPU_QSEED3_DEFAULT_PRELOAD_V;
+ 		}
++		if (inline_rotation && dpu_rot_preload_x >= 0)
++			scale_cfg->preload_x[i] = dpu_rot_preload_x;
++		if (inline_rotation && dpu_rot_preload_y >= 0)
++			scale_cfg->preload_y[i] = dpu_rot_preload_y;
+ 	}
+ 	if (!(MSM_FORMAT_IS_YUV(fmt)) && (src_h == dst_h)
+-		&& (src_w == dst_w) && !inline_rotation)
++		&& (src_w == dst_w) && (!inline_rotation || dpu_rot_no_scaler))
+ 		return;
+ 
+ 	scale_cfg->dst_width = dst_w;
+@@ -740,6 +777,10 @@ static int dpu_plane_check_inline_rotation(struct dpu_plane *pdpu,
  		return -EINVAL;
  	}
  
@@ -50,7 +77,7 @@ index 1620913..22f646f 100644
  	supported_formats = sblk->rotation_cfg->rot_format_list;
  	num_formats = sblk->rotation_cfg->rot_num_formats;
  
-@@ -788,7 +813,7 @@ static int dpu_plane_atomic_check_pipe(struct dpu_plane *pdpu,
+@@ -788,7 +829,7 @@ static int dpu_plane_atomic_check_pipe(struct dpu_plane *pdpu,
  	pipe_cfg->rotation = drm_rotation_simplify(new_plane_state->rotation,
  						   supported_rotations);
  
@@ -59,7 +86,7 @@ index 1620913..22f646f 100644
  		pipe_cfg->rotation ^= DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y;
  
  	min_src_size = MSM_FORMAT_IS_YUV(fmt) ? 2 : 1;
-@@ -1527,12 +1552,39 @@ static void dpu_plane_sspp_update_pipe(struct drm_plane *plane,
+@@ -1527,12 +1568,39 @@ static void dpu_plane_sspp_update_pipe(struct drm_plane *plane,
  		return;
  	}
  
@@ -72,8 +99,7 @@ index 1620913..22f646f 100644
 +		struct dpu_sw_pipe_cfg rot_cfg = *pipe_cfg;
 +		int h = drm_rect_height(&pipe_cfg->src_rect);
 +		int pad = ALIGN(h, 16) - h;
- 
--	_dpu_plane_setup_scaler(pipe, fmt, false, pipe_cfg);
++
 +		if (dpu_rot_pad_src) {
 +			rot_cfg.src_rect.y2 += pad;
 +		} else {
@@ -82,7 +108,8 @@ index 1620913..22f646f 100644
 +			rot_cfg.src_rect.y1 += y;
 +			rot_cfg.src_rect.y2 += y;
 +		}
-+
+ 
+-	_dpu_plane_setup_scaler(pipe, fmt, false, pipe_cfg);
 +		if (dpu_rot_debug)
 +			pr_info_ratelimited("dpu rot: sspp %d src " DRM_RECT_FMT " dst " DRM_RECT_FMT " rot 0x%x\n",
 +					    pipe->sspp->idx - SSPP_NONE,
