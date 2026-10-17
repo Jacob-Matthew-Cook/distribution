@@ -2,10 +2,10 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="40343cf6e55c57e6219cbc9f28ebb1b9d25951b6"
-PKG_SHA256="5b8c98a978f78b533750bb493e14624937cf312a22fcd8c695501973e04ad61c"
+PKG_VERSION="8abeccb84b0a3851b503c291b13550f1a62d1833"
+PKG_SHA256=""
 PKG_LICENSE="GPL"
-PKG_SITE="https://github.com/ROCKNIX/emulationstation-next"
+PKG_SITE="https://github.com/Jacob-Matthew-Cook/emulationstation-next"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool poppler pugixml noto-sans-cjk ${OPENGLES}"
 PKG_NEED_UNPACK="busybox"
