@@ -1000,6 +1000,46 @@ function set_dreamcastopts() {
     fi
 }
 
+function set_armgbaopts() {
+    log "Set up armGBA..."
+    if [ "${CORE}" = "armgba" ]
+    then
+        local ARMGBADIR="${RETROARCH_PATH}/config/armGBA"
+        if [ ! -d "${ARMGBADIR}" ]
+        then
+            mkdir -p "${ARMGBADIR}"
+        fi
+        local ARMGBAOPT="${ARMGBADIR}/armGBA.opt"
+        touch "${ARMGBAOPT}"
+        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_low_pass_filter = /d' "${ARMGBAOPT}"
+        local GBA_BIOS="$(game_setting gba_bios)"
+        if [ -n "${GBA_BIOS}" ]
+        then
+            echo 'armgba_bios = "'${GBA_BIOS}'"' >>"${ARMGBAOPT}"
+        fi
+        local SKIP_BIOS="$(game_setting skip_bios_intro)"
+        if [ -n "${SKIP_BIOS}" ]
+        then
+            echo 'armgba_skip_bios = "'${SKIP_BIOS}'"' >>"${ARMGBAOPT}"
+        fi
+        local GB_BOOT_ROM="$(game_setting gb_boot_rom)"
+        if [ -n "${GB_BOOT_ROM}" ]
+        then
+            echo 'armgba_gb_boot_rom = "'${GB_BOOT_ROM}'"' >>"${ARMGBAOPT}"
+        fi
+        local LCD_GHOSTING="$(game_setting lcd_ghosting)"
+        if [ -n "${LCD_GHOSTING}" ]
+        then
+            echo 'armgba_lcd_ghosting = "'${LCD_GHOSTING}'"' >>"${ARMGBAOPT}"
+        fi
+        local LOW_PASS="$(game_setting low_pass_filter)"
+        if [ -n "${LOW_PASS}" ]
+        then
+            echo 'armgba_low_pass_filter = "'${LOW_PASS}'"' >>"${ARMGBAOPT}"
+        fi
+    fi
+}
+
 function set_melondsds_opt() {
     local OPT_FILE="${1}"
     local OPT_KEY="${2}"
@@ -1346,6 +1386,7 @@ set_n64opts &
 set_saturnopts &
 set_snesopts &
 set_dreamcastopts &
+set_armgbaopts &
 
 ### Sed operations are expensive, so they are staged and executed as
 ### a single process when all forks complete.
