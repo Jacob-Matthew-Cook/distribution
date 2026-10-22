@@ -1011,7 +1011,7 @@ function set_armgbaopts() {
         fi
         local ARMGBAOPT="${ARMGBADIR}/armGBA.opt"
         touch "${ARMGBAOPT}"
-        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_low_pass_filter = /d' "${ARMGBAOPT}"
+        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_lcd_interleave = /d; /^armgba_lcd_grid = /d; /^armgba_lcd_shadow = /d; /^armgba_gb_advance_panel = /d; /^armgba_low_pass_filter = /d' "${ARMGBAOPT}"
         local GBA_BIOS="$(game_setting gba_bios)"
         if [ -n "${GBA_BIOS}" ]
         then
@@ -1031,6 +1031,26 @@ function set_armgbaopts() {
         if [ -n "${LCD_GHOSTING}" ]
         then
             echo 'armgba_lcd_ghosting = "'${LCD_GHOSTING}'"' >>"${ARMGBAOPT}"
+        fi
+        local INTERLEAVED_ROWS="$(game_setting interleaved_rows)"
+        if [ -n "${INTERLEAVED_ROWS}" ]
+        then
+            echo 'armgba_lcd_interleave = "'${INTERLEAVED_ROWS}'"' >>"${ARMGBAOPT}"
+        fi
+        local LCD_GRID="$(game_setting lcd_grid)"
+        if [ -n "${LCD_GRID}" ]
+        then
+            echo 'armgba_lcd_grid = "'${LCD_GRID}'"' >>"${ARMGBAOPT}"
+        fi
+        local PIXEL_SHADOW="$(game_setting gb_pixel_shadow)"
+        if [ -n "${PIXEL_SHADOW}" ]
+        then
+            echo 'armgba_lcd_shadow = "'${PIXEL_SHADOW}'"' >>"${ARMGBAOPT}"
+        fi
+        local ADVANCE_PANEL="$(game_setting gb_advance_panel)"
+        if [ -n "${ADVANCE_PANEL}" ]
+        then
+            echo 'armgba_gb_advance_panel = "'${ADVANCE_PANEL}'"' >>"${ARMGBAOPT}"
         fi
         local LOW_PASS="$(game_setting low_pass_filter)"
         if [ -n "${LOW_PASS}" ]
