@@ -2,7 +2,7 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="armgba-lr"
-PKG_VERSION="9543bbeadb56d6b05a86d9bb96df7bb572c4fbef"
+PKG_VERSION="70870bfde58a2788c75f20edc4c4d20f64d10ff3"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/Jacob-Matthew-Cook/armGBA"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -14,4 +14,7 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
   cp ${PKG_BUILD}/.${TARGET_NAME}/armgba_libretro.so ${INSTALL}/usr/lib/libretro/
   cp ${PKG_BUILD}/libretro/armgba_libretro.info ${INSTALL}/usr/lib/libretro/
+  mkdir -p ${INSTALL}/usr/share/glsl-shaders/armgba ${INSTALL}/usr/share/slang-shaders/armgba
+  cp ${PKG_BUILD}/shaders/*.glsl* ${INSTALL}/usr/share/glsl-shaders/armgba/
+  cp ${PKG_BUILD}/shaders/*.slang* ${INSTALL}/usr/share/slang-shaders/armgba/
 }
