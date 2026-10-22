@@ -1011,7 +1011,7 @@ function set_armgbaopts() {
         fi
         local ARMGBAOPT="${ARMGBADIR}/armGBA.opt"
         touch "${ARMGBAOPT}"
-        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_lcd_interleave = /d; /^armgba_lcd_grid = /d; /^armgba_lcd_shadow = /d; /^armgba_gb_advance_panel = /d; /^armgba_low_pass_filter = /d' "${ARMGBAOPT}"
+        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_lcd_interleave = /d; /^armgba_lcd_grid = /d; /^armgba_lcd_shadow = /d; /^armgba_gb_advance_panel = /d; /^armgba_lcd_threads = /d; /^armgba_low_pass_filter = /d' "${ARMGBAOPT}"
         local GBA_BIOS="$(game_setting gba_bios)"
         if [ -n "${GBA_BIOS}" ]
         then
@@ -1051,6 +1051,11 @@ function set_armgbaopts() {
         if [ -n "${ADVANCE_PANEL}" ]
         then
             echo 'armgba_gb_advance_panel = "'${ADVANCE_PANEL}'"' >>"${ARMGBAOPT}"
+        fi
+        local LCD_THREADS="$(game_setting lcd_effect_threads)"
+        if [ -n "${LCD_THREADS}" ]
+        then
+            echo 'armgba_lcd_threads = "'${LCD_THREADS}'"' >>"${ARMGBAOPT}"
         fi
         local LOW_PASS="$(game_setting low_pass_filter)"
         if [ -n "${LOW_PASS}" ]
