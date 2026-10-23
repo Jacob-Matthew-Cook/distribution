@@ -1047,7 +1047,7 @@ function set_armgbaopts() {
         then
             echo 'armgba_lcd_shadow = "'${PIXEL_SHADOW}'"' >>"${ARMGBAOPT}"
         fi
-        local ADVANCE_PANEL="$(game_setting gb_advance_panel)"
+        local ADVANCE_PANEL="$(game_setting gb_on_advance_screen)"
         if [ -n "${ADVANCE_PANEL}" ]
         then
             echo 'armgba_gb_advance_panel = "'${ADVANCE_PANEL}'"' >>"${ARMGBAOPT}"
