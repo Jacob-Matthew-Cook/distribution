@@ -1011,7 +1011,7 @@ function set_armgbaopts() {
         fi
         local ARMGBAOPT="${ARMGBADIR}/armGBA.opt"
         touch "${ARMGBAOPT}"
-        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_lcd_interleave = /d; /^armgba_lcd_grid = /d; /^armgba_lcd_shadow = /d; /^armgba_gb_advance_panel = /d; /^armgba_lcd_threads = /d; /^armgba_low_pass_filter = /d' "${ARMGBAOPT}"
+        sed -i '/^armgba_bios = /d; /^armgba_skip_bios = /d; /^armgba_gb_boot_rom = /d; /^armgba_lcd_ghosting = /d; /^armgba_lcd_interleave = /d; /^armgba_lcd_grid = /d; /^armgba_lcd_shadow = /d; /^armgba_gb_advance_panel = /d; /^armgba_lcd_threads = /d; /^armgba_low_pass_filter = /d; /^armgba_threaded_video = /d; /^armgba_color_correction = /d; /^armgba_gb_color_correction = /d; /^armgba_gb_screen = /d' "${ARMGBAOPT}"
         local GBA_BIOS="$(game_setting gba_bios)"
         if [ -n "${GBA_BIOS}" ]
         then
@@ -1052,7 +1052,7 @@ function set_armgbaopts() {
         then
             echo 'armgba_gb_advance_panel = "'${ADVANCE_PANEL}'"' >>"${ARMGBAOPT}"
         fi
-        local LCD_THREADS="$(game_setting lcd_effect_threads)"
+        local LCD_THREADS="$(game_setting cpu_effect_threads)"
         if [ -n "${LCD_THREADS}" ]
         then
             echo 'armgba_lcd_threads = "'${LCD_THREADS}'"' >>"${ARMGBAOPT}"
@@ -1061,6 +1061,26 @@ function set_armgbaopts() {
         if [ -n "${LOW_PASS}" ]
         then
             echo 'armgba_low_pass_filter = "'${LOW_PASS}'"' >>"${ARMGBAOPT}"
+        fi
+        local THREADED_VIDEO="$(game_setting threaded_video)"
+        if [ -n "${THREADED_VIDEO}" ]
+        then
+            echo 'armgba_threaded_video = "'${THREADED_VIDEO}'"' >>"${ARMGBAOPT}"
+        fi
+        local GBA_COLOR="$(game_setting gba_color_correction)"
+        if [ -n "${GBA_COLOR}" ]
+        then
+            echo 'armgba_color_correction = "'${GBA_COLOR}'"' >>"${ARMGBAOPT}"
+        fi
+        local GB_COLOR="$(game_setting gb_color_correction)"
+        if [ -n "${GB_COLOR}" ]
+        then
+            echo 'armgba_gb_color_correction = "'${GB_COLOR}'"' >>"${ARMGBAOPT}"
+        fi
+        local GB_SCREEN="$(game_setting gb_screen)"
+        if [ -n "${GB_SCREEN}" ]
+        then
+            echo 'armgba_gb_screen = "'${GB_SCREEN}'"' >>"${ARMGBAOPT}"
         fi
     fi
 }
