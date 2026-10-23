@@ -14,4 +14,7 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
   cp ${PKG_BUILD}/.${TARGET_NAME}/armgba_libretro.so ${INSTALL}/usr/lib/libretro/
   cp ${PKG_BUILD}/libretro/armgba_libretro.info ${INSTALL}/usr/lib/libretro/
+  mkdir -p ${INSTALL}/usr/share/glsl-shaders/armgba ${INSTALL}/usr/share/slang-shaders/armgba
+  cp ${PKG_BUILD}/shaders/*.glsl* ${INSTALL}/usr/share/glsl-shaders/armgba/
+  cp ${PKG_BUILD}/shaders/*.slang* ${INSTALL}/usr/share/slang-shaders/armgba/
 }
