@@ -2,7 +2,7 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="armgba-lr"
-PKG_VERSION="edee0d3abf2e494041c79d6dad33ff6432c8c33f"
+PKG_VERSION="a7100e165f611ea209e5b27c7cb3dce8a11b19f3"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/Jacob-Matthew-Cook/armGBA"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
