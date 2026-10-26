@@ -14,7 +14,7 @@ case "$HW_DEVICE" in
     ;;
   SM4450)
     [[ "$QUIRK_DEVICE" == "Anbernic RG 55G1" ]] && CAN_FLASH=1
-    [[ "$QUIRK_DEVICE" == "Retroid Pocket Classic"*"Rev Q" ]] && CAN_FLASH=1
+    [[ "$QUIRK_DEVICE" == "Retroid Pocket Classic"* ]] && CAN_FLASH=1
     ;;
 esac
 
