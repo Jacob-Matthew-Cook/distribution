@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jacob Cook <jacobmcook1984@gmail.com>
-Date: Wed, 28 Oct 2026 09:46:22 -0400
+Date: Wed, 28 Oct 2026 10:15:09 -0400
 Subject: [PATCH] drm/panel: icna35xx: serialise DSI writes with a panel lock
 
 The backlight ops, the frame length store and disable() all toggle the DSI
@@ -11,7 +11,8 @@ level), always restore the LPM bit, and report the cached brightness
 instead of reading it back over DSI.
 
 Set enabled from enable() instead of prepare(), so nothing is sent to the
-panel before the DSI stream starts.
+panel before the DSI stream starts. prepare() still sends its init sequence unlocked. That is safe because
+enabled stays false until enable(), so the other writers back off.
 ---
  drivers/gpu/drm/panel/panel-chipone-icna35xx.c | 48 +++++++++++++++-----------
  1 file changed, 28 insertions(+), 20 deletions(-)

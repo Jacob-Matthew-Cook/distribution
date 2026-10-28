@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Jacob Cook <jacobmcook1984@gmail.com>
-Date: Wed, 28 Oct 2026 09:46:22 -0400
+Date: Wed, 28 Oct 2026 10:15:09 -0400
 Subject: [PATCH] drm/panel: vtdr6130-cog: serialise DSI writes with a panel lock
 
 The backlight ops, the frame length store and disable() all toggle the DSI
@@ -9,6 +9,9 @@ a panel that is being disabled. Take one panel lock around them, skip
 backlight writes while the panel is off (drm_panel_enable() re-applies the
 level), always restore the LPM bit, and report the cached brightness
 instead of reading it back over DSI.
+
+prepare() still sends its init sequence unlocked. That is safe because
+enabled stays false until enable(), so the other writers back off.
 ---
  .../gpu/drm/panel/panel-visionox-vtdr6130-cog.c    | 36 +++++++++++-----------
  1 file changed, 18 insertions(+), 18 deletions(-)
